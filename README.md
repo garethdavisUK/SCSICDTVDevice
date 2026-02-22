@@ -17,18 +17,20 @@ From a driver level here is what I think is currently working, what this transla
 * Non blocking IO commands: CDTV_GETDRIVETYPE, CDTV_GETGEOMETRY, CDTV_GETNUMTRACKS, CDTV_INFO, CDTV_ISROM, CDTV_MUTE, CDTV_PAUSE, CDTV_STOPPLAY, CDTV_SUBQLSN, CDTV_SUBQMSF
 * Write error instructions: CDTV_PROTSTATUS, CDTV_FORMAT, CDTV_WRITE
 * NOP instructions: CDTV_FLUSH, CDTV_UPDATE, CDTV_CLEAR, CDTV_STOP, CDTV_START, CDTV_REMOVE
+
 I've also implemented HD_SCSICMD which allows a SCSI direct command to be sent to the drive if something not covered in the CDTV interface is required, like fetching subcode channels or setting drive speed.
 
 ### What doesn't work
 * As already mentioned, cdstrap does not open the CDTV animation screen post reset.
 * CDTV_FADE is not implemented, so audio transitions sound off.
-* PLAY_CDXL command
+* CDTV_READXL command
 * Any commands that depend on the frame timer like CDTV_FRAMECALL
 * Any of the CD audio commands that pass a tracklist (the PLAY commands with 'SEG' in the name) 
 * Hardware commands like CDTV_FRONTPANEL and CDTV_GENLOCK
 * Front panel buttons, and VFD display of track information during CDDA playback
 * Other undocumented commands like CDTV_OPTIONS and CDTV_DIRECT
 * CD-G playback, and anything else that uses the undocumented interface to stream CDDA subcode
+
 Also see the notes about SCSI timeouts below.
 
 ## Supported hardware
