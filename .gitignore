@@ -1,0 +1,6 @@
+build-debug
+build-release
+Thumbs.db
+.DS_Store
+cddatests
+scsitests

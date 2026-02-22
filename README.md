@@ -1,5 +1,5 @@
 # SCSI cdtv.device
-## What is it?
+## What is it? 
 This is a ground up rewrite of the cdtv.device driver present in the extended ROMs of the Commodore CDTV and A570 drives. 
 
 This translates the device calls into SCSI 2 compatible CD-ROM commands and sends them to ID 6 on the scsi.device. This allows a third party SCSI CD-ROM drive to be used in place of the internal drive, which are unobtainium once they fail. You will need the CDTV SCSI interface to connect the drive to, but there are reproductions of these available.
