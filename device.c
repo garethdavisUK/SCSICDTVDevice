@@ -70,7 +70,7 @@ struct Library * init(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"
     PutMsg(db->taskPort, &tm.msg);
 
     // Create the handler task, passing devBase in the userdata field
-    db->handlerTask=alib_CreateTask("CDTVTask",0,devHandler,4096,db,SysBase);
+    db->handlerTask=alib_CreateTask("cdtv.device",0,devHandler,4096,db,SysBase);
 
     if (db->handlerTask == NULL) {
         Dbg("init CreateTask fail");
