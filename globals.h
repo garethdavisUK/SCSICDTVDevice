@@ -30,10 +30,11 @@
 
 #define STR(s) #s          
 #define XSTR(s) STR(s) 
-#define DBGSTRING(s) "[cdtv] " XSTR(s) "\n"
+
 
 #if DEBUG
 #include <clib/debug_protos.h>
+#define DBGSTRING(s) "[cdtv] " s "\n"
 #define Dbg(s) KPrintF((CONST_STRPTR) DBGSTRING(s));
 #define Dbgf(s) KPrintF s
 #else
