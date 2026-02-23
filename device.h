@@ -16,7 +16,7 @@
 #define DEVICE_REVISION 0
 #endif
 
-#define DEVICE_PRIORITY 3 
+#define DEVICE_PRIORITY 8 
 
 const char device_name[] = DEVICE_NAME;
 const char device_id_string[] = DEVICE_ID_STRING;
