@@ -154,15 +154,17 @@ static void __attribute__((used)) open(struct devBase *db asm("a6"), struct IORe
     ioreq->io_Error = IOERR_OPENFAIL;
     ioreq->io_Message.mn_Node.ln_Type = NT_REPLYMSG;
 
-    if (!db->initComplete) return; //Device init failed, can't proceed, shouldn't ever happen
-
-    if (unitnum != 0) return; //Only 1 unit
-
+    if (!db->initComplete) {
+        Dbg("open() task init not complete");
+        return; //Device init failed, can't proceed, shouldn't ever happen
+    }
+    if (unitnum != 0) {
+        Dbg("open() invalid unitnum");
+        return; //Only 1 unit
+    }
     //Increment open count and return success
     db->devNode.lib_OpenCnt++;
     ioreq->io_Error = 0; //Success
-
-    Dbg("open() success");
 }
 
 // An Exec CloseDevice request
@@ -279,6 +281,7 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
         case CDTV_POKEPLAYLSN:
         case CDTV_POKEPLAYMSF:
         case CDTV_READ:
+        case CDTV_READXL:
 		case CDTV_SEEK:
         case CDTV_TOCLSN:
         case CDTV_TOCMSF:
@@ -350,13 +353,7 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
             Dbg("TV_FRAMECALL");
 			db->dev_ioReq->io_Error = CDERR_NOCMD;
 			ReplyMsg(&db->dev_ioReq->io_Message);
-	        break;    
-
-        case CDTV_READXL:
-            Dbg("CDTV_READXL");
-			db->dev_ioReq->io_Error = CDERR_NOCMD;
-			ReplyMsg(&db->dev_ioReq->io_Message);
-	        break;    
+	        break; 
 
         case CDTV_RESET:
             Dbg("CDTV_RESET");

@@ -147,7 +147,9 @@ void cdtvGetTOC(struct devBase * db,struct IOStdReq *iostd, BOOL msfmode);
 void cdtvSeek(struct devBase * db,struct IOStdReq *iostd);
 void cdtvSubQ(struct devBase * db,struct IOStdReq *iostd, BOOL msfmode);
 int driveGetQSubChannel(struct devBase * db,BOOL msfmode);
-void cdtvRead(struct devBase * db,struct IOStdReq *readReq);
+void cdtvRead(struct devBase * db,struct IOStdReq *readReq, BOOL allowAbort);
+USHORT cdtvReadBlocks(struct devBase * db, ULONG startblock, USHORT blockstofetch, APTR readbufptr);
+void cdtvReadXL(struct devBase * db,struct IOStdReq *readReq);
 
 // hardware.c
 void driveInitSCSIstructure(struct devBase * db);

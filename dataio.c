@@ -238,10 +238,10 @@ int driveGetQSubChannel(struct devBase * db,BOOL msfmode){
 	return (0);
 }
 
-void cdtvRead(struct devBase * db,struct IOStdReq *readReq){
+void cdtvRead(struct devBase * db,struct IOStdReq *readReq, BOOL allowAbort){
 	UBYTE SD_ReadCmd[]	= { 0x28,0,0,0,0,0,0,0,0,0};	
 	ULONG startblock, bytesread, tocopy, remainbytes;
-	USHORT blockstofetch; // limitation of drive
+	USHORT blockstofetch, blocksfetched; // limitation of drive
 	UWORD *iostdbufptr;
 	int error;
 
@@ -310,7 +310,7 @@ void cdtvRead(struct devBase * db,struct IOStdReq *readReq){
 		db->scsiCmd.scsi_Data = (UWORD *)db->sectorbuffer;		  
 		db->scsiCmd.scsi_Length = db->discblocksize;	
 		
-//		Dbgf(((CONST_STRPTR) "[cdtv] about to read single block 0x%lx\n",startblock));
+		Dbgf(((CONST_STRPTR) "[cdtv] partial read start from block 0x%lx bytes 0x%lx\n",startblock, remainbytes));
 
         error=DoIO( (struct IORequest *) db->scsiReq );
 
@@ -318,14 +318,15 @@ void cdtvRead(struct devBase * db,struct IOStdReq *readReq){
 
         if (error){
 			// SCSI command execution error
-			Dbgf(((CONST_STRPTR) "[cdtv] read 1 failed error=%d\n",error));
+			Dbgf(((CONST_STRPTR) "[cdtv] read begin start error=%d\n",error));
+			DebugSCSIerror(error, &db->scsiCmd);
 			readReq->io_Error = CDERR_ABORTED;
 			return;
 		} 
 		
-        if (db->abortPending){
+        if (db->abortPending && allowAbort){
 			// AbortIO signal received
-			Dbg("Read 1 aborted");
+			Dbg("Read start aborted");
 			readReq->io_Error = CDERR_ABORTED;
 			return;
 		} 
@@ -353,60 +354,42 @@ void cdtvRead(struct devBase * db,struct IOStdReq *readReq){
 	// Consider complete if READ_PAD_BYTES or fewer left.
 	if ((lengthinbytes-bytesread)<=READ_PAD_BYTES){
 		readReq->io_Actual=lengthinbytes;
+		readReq->io_Error=0; //success
         // Dbg("done");
 		return;
 	}
 
 	
 	blockstofetch = (lengthinbytes - bytesread)/db->discblocksize;
-
+	
 	if (blockstofetch){
 		// There are complete blocks to fetch
-        //Dbgf(((CONST_STRPTR) "[cdtv] read full blocks begin - 0x%lx\n",blockstofetch));
-
-        SD_ReadCmd[7] = (blockstofetch & 0xff00) >> 8;
-		SD_ReadCmd[8] = (blockstofetch & 0x00ff);	
-		
 		startblock = (discaddress + bytesread)/db->discblocksize;
-		SD_ReadCmd[2] = (startblock & 0xff000000) >> 24;
-		SD_ReadCmd[3] = (startblock & 0x00ff0000) >> 16;
-		SD_ReadCmd[4] = (startblock & 0x0000ff00) >> 8;
-		SD_ReadCmd[5] = (startblock & 0x000000ff);
+		blocksfetched = cdtvReadBlocks(db, startblock, blockstofetch, iostdbufptr);
 
-		// Set SCSI to write to ioreq buffer
-		db->scsiCmd.scsi_Data = iostdbufptr;			  
-		db->scsiCmd.scsi_Length = blockstofetch * db->discblocksize;					      
-		db->scsiCmd.scsi_SenseActual = 0;					// reset received data count    
-
-        //Dbgf(((CONST_STRPTR) "[cdtv] about to read 0x%lx blocks from block 0x%lx\n",blockstofetch, startblock));
-
-		error=DoIO( (struct IORequest *) db->scsiReq );		// send it to the device driver
-
-		if (error){
+		if (blocksfetched!=blockstofetch){
 			// SCSI command execution error
-			Dbgf(((CONST_STRPTR) "[cdtv] read 2 failed error=%d\n",error));
+			Dbgf(((CONST_STRPTR) "[cdtv] read 2 failed to fetch all blocks - fetched %d expected %d\n",blocksfetched, blockstofetch));
 			readReq->io_Error = CDERR_ABORTED;
 			return;
-		} 
-		
-        if (db->abortPending){
+		}
+
+        if (db->abortPending && allowAbort){
 			// AbortIO signal received
-			Dbg("Read 2 aborted");
+			Dbg("Read blocks aborted");
 			readReq->io_Error = CDERR_ABORTED;
 			return;
 		} 
 
-		bytesread+=db->scsiCmd.scsi_Actual;
-		iostdbufptr+=db->scsiCmd.scsi_Actual;
+		bytesread+=blocksfetched*db->discblocksize;
+		iostdbufptr+=blocksfetched*db->discblocksize;
 
-//		Dbg("read full blocks end\n");
-
-    }
+    } // end if blockstofetch
 	
-	// Consider complete if READ_PAD_BYTES or fewer left.
+	// As before, consider complete if READ_PAD_BYTES or fewer left.
 		if((lengthinbytes-bytesread)<=READ_PAD_BYTES){
 		readReq->io_Actual=lengthinbytes;
-//		Dbg("done");
+		readReq->io_Error=0; //success
 		return;
 	}
 
@@ -419,23 +402,38 @@ void cdtvRead(struct devBase * db,struct IOStdReq *readReq){
 	SD_ReadCmd[7] = 0;
 	SD_ReadCmd[8] = 1;
 	
+	// Reset the SCSI structure as it may have just been used by cdtvReadBlocks changing the pointers
+	db->scsiReq->io_Length  = sizeof(struct SCSICmd);
+	db->scsiReq->io_Data    = (APTR)&db->scsiCmd;
+	db->scsiReq->io_Command = HD_SCSICMD;
+	db->scsiReq->io_Flags	= 0;
+
+	db->scsiCmd.scsi_Flags = SCSIF_AUTOSENSE|SCSIF_READ;  													 
+	db->scsiCmd.scsi_SenseData =(UBYTE *)db->sense;			     
+	db->scsiCmd.scsi_SenseLength = SENSESIZE;			     
+
+	db->scsiCmd.scsi_Command=(UBYTE *)SD_ReadCmd;		// command to issue             
+	db->scsiCmd.scsi_CmdLength = sizeof(SD_ReadCmd);	// length of the command        
+	db->scsiCmd.scsi_SenseActual = 0;					// reset received data count 
+
 	db->scsiCmd.scsi_Data = (UWORD *)db->sectorbuffer;		  
 	db->scsiCmd.scsi_Length = db->discblocksize;	
 	
-//	Dbgf(CONST_STRPTR) "[cdtv] about to read single block 0x%lx\n",startblock));
+	Dbgf(((CONST_STRPTR) "[cdtv] partial read end from block 0x%lx bytes 0x%lx\n",startblock, (lengthinbytes-bytesread)));
     
 	error=DoIO( (struct IORequest *) db->scsiReq );
 	
 	if (error){
 		// SCSI command execution error
-		Dbgf(((CONST_STRPTR) "[cdtv] read 3 failed error=%d\n",error));
+		Dbgf(((CONST_STRPTR) "[cdtv] read end failed error=%d\n",error));
+		DebugSCSIerror(error, &db->scsiCmd);
 		readReq->io_Error = CDERR_ABORTED;
 		return;
 	} 
 	
-	if (db->abortPending){
+	if (db->abortPending && allowAbort){
 		// AbortIO signal received
-		Dbg("Read 3 aborted");
+		Dbg("Read end aborted");
 		readReq->io_Error = CDERR_ABORTED;
 		return;
 	} 
@@ -446,8 +444,146 @@ void cdtvRead(struct devBase * db,struct IOStdReq *readReq){
 
 	bytesread+=tocopy;
 	readReq->io_Actual=bytesread;
-
-//	Dbg("done");
+	readReq->io_Error=0; //success
 	
 }
 
+USHORT cdtvReadBlocks(struct devBase * db, ULONG startblock, USHORT blockstofetch, APTR readbufptr){
+	UBYTE SD_ReadCmd[]	= { 0x28,0,0,0,0,0,0,0,0,0};	
+	int error;
+
+	struct ExecBase *SysBase = db->SysBase; // Restore Exec
+    
+	SD_ReadCmd[2] = (startblock & 0xff000000) >> 24;
+	SD_ReadCmd[3] = (startblock & 0x00ff0000) >> 16;
+	SD_ReadCmd[4] = (startblock & 0x0000ff00) >> 8;
+	SD_ReadCmd[5] = (startblock & 0x000000ff);
+		
+	SD_ReadCmd[7] = (blockstofetch & 0xff00) >> 8;
+	SD_ReadCmd[8] = (blockstofetch & 0x00ff);	
+
+	//Dbgf(((CONST_STRPTR) "[cdtv] read full blocks begin - 0x%lx\n",blockstofetch));
+
+	db->scsiReq->io_Length  = sizeof(struct SCSICmd);
+	db->scsiReq->io_Data    = (APTR)&db->scsiCmd;
+	db->scsiReq->io_Command = HD_SCSICMD;
+	db->scsiReq->io_Flags	= 0;
+
+	db->scsiCmd.scsi_Flags = SCSIF_AUTOSENSE|SCSIF_READ;  													 
+	db->scsiCmd.scsi_SenseData =(UBYTE *)db->sense;			     
+	db->scsiCmd.scsi_SenseLength = SENSESIZE;			     
+
+	db->scsiCmd.scsi_Command=(UBYTE *)SD_ReadCmd;		// command to issue             
+	db->scsiCmd.scsi_CmdLength = sizeof(SD_ReadCmd);	// length of the command        
+	db->scsiCmd.scsi_SenseActual = 0;					// reset received data count 
+
+	// Set SCSI to write to read buffer
+	db->scsiCmd.scsi_Data = readbufptr;
+	db->scsiCmd.scsi_Length = blockstofetch * db->discblocksize;					      
+
+	Dbgf(((CONST_STRPTR) "[cdtv] reading 0x%lx blocks from block 0x%lx\n",blockstofetch, startblock));
+
+	error=DoIO( (struct IORequest *) db->scsiReq );		// send it to the device driver
+
+	if (error){
+		// SCSI command execution error
+		Dbgf(((CONST_STRPTR) "[cdtv] read blocks failed error=%d\n",error));
+		DebugSCSIerror(error, &db->scsiCmd);
+		return 0;
+	} 
+	
+
+	return (USHORT)db->scsiCmd.scsi_Actual/db->discblocksize;
+
+}
+
+
+
+
+void cdtvReadXL(struct devBase * db,struct IOStdReq *readReq){
+
+	struct ExecBase *SysBase = db->SysBase; // Restore Exec
+
+	struct IOStdReq readDataReq; // IOStdReq structure to use for the individual reads of each node in the list
+	struct Interrupt completeInt;
+
+	register APTR *regA2 asm ("a2");
+	
+	ULONG startaddress, bytesread, byteslength;
+	startaddress = readReq->io_Offset*db->discblocksize;
+	bytesread=0;
+	byteslength=readReq->io_Length*db->discblocksize;
+	//byteslength=readReq->io_Length;
+
+	// List of CDXL read requests - each node contains a CDXLread structure with the details of the read to perform and where to put the data. 
+	struct MinList *CDXLlist = (struct MinList *)readReq->io_Data; 
+	struct CDXL *currentNode;
+
+	Dbgf(((CONST_STRPTR) "[cdtv] readxl start 0x%lx blocks 0x%lx bytes 0x%lx\n",readReq->io_Offset, readReq->io_Length, byteslength));
+
+	//Read through the list items
+	for ( currentNode = (struct CDXL *)CDXLlist->mlh_Head ; currentNode->Node.mln_Succ != NULL ; currentNode = (struct CDXL *)currentNode->Node.mln_Succ ) {
+
+		Dbgf(((CONST_STRPTR) "[cdtv] readxl node ptr 0x%lx succ 0x%lx buf 0x%lx len 0x%lx total 0x%lx\n",currentNode, currentNode->Node.mln_Succ, currentNode->Buffer, currentNode->Length, bytesread));
+
+		if (currentNode->Buffer==NULL && currentNode->Length!=0){
+			// Invalid node - buffer is null but length is not zero
+			Dbg("ReadXL invalid node - null buffer with non-zero length");
+			readReq->io_Error = CDERR_BADARG;
+			return;
+		}
+
+		readDataReq.io_Offset = startaddress + bytesread;
+		readDataReq.io_Length = currentNode->Length;	
+		readDataReq.io_Data = currentNode->Buffer;
+		readDataReq.io_Error = 0;
+		readDataReq.io_Actual = 0;
+
+		if (currentNode->Length!=0) cdtvRead(db,&readDataReq, FALSE);
+
+		bytesread += readDataReq.io_Actual;
+		currentNode->Actual = readDataReq.io_Actual;
+
+		if (readDataReq.io_Error != 0){
+			// ioError received
+			Dbg("ReadXL ioError");
+			readReq->io_Error = CDERR_ABORTED;
+			return;
+		} 
+
+		if (currentNode->DoneFunc != NULL){
+			// This node has a completion function - trigger it now that the read is done
+			completeInt.is_Node.ln_Type = NT_UNKNOWN;
+			completeInt.is_Code = currentNode->DoneFunc; // Trigger the complete function
+			completeInt.is_Data = NULL; // No data to pass, just want to trigger the interrupt
+			completeInt.is_Node.ln_Pri = 0; 	
+			completeInt.is_Node.ln_Name = (char *)(STRPTR)"CDTVReadXLCompleteInt";
+			regA2 = (APTR)(currentNode); // Pass pointer to current node in A2 as argument to the complete function 
+			Dbgf(((CONST_STRPTR) "[cdtv] callback 0x%lx\n",regA2));
+			Cause(&completeInt);
+		}
+
+		if (bytesread >= byteslength){
+			// We've read as much as was requested - return now
+			Dbg("ReadXL done");
+			db->blocking_ioReq->io_Error = 0;
+			db->blocking_ioReq->io_Actual = bytesread;
+			return;			
+		}
+
+
+		if (db->abortPending){
+			// AbortIO signal received
+			Dbg("ReadXL aborted");
+			db->blocking_ioReq->io_Error = CDERR_ABORTED;
+			db->blocking_ioReq->io_Actual = bytesread;
+			return;
+		} 
+
+	}
+
+	Dbg("ReadXL end");
+	db->blocking_ioReq->io_Error = 0;
+	db->blocking_ioReq->io_Actual = bytesread;
+	return;
+}
