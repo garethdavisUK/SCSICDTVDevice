@@ -99,8 +99,8 @@ void devHandler(void)
 		if ( OpenDevice( (CONST_STRPTR)"scsi.device", 6, (struct IORequest*) db->scsiReq, 0 ) ) {
 			if ( OpenDevice( (CONST_STRPTR)"2nd.scsi.device", 6, (struct IORequest*) db->scsiReq, 0 ) ) {
 				db->scsiReq->io_Device = NULL;
-				DisplayAlert(RECOVERY_ALERT, (STRPTR)"\x00\x10\x14[cdtv.device] Unable to open scsi.device or 2nd.scsi.device unit 6\x00", 26);
 				Dbg("scsi open failed");
+				DisplayAlert(RECOVERY_ALERT, (STRPTR)"\x00\x10\x0A[cdtv.device] Unable to open scsi.device or 2nd.scsi.device unit 6\x00", 26);
 				terminate=TRUE;
 				break;
 			}
@@ -150,7 +150,7 @@ void devHandler(void)
 		error = DoIO( (struct IORequest *) db->scsiReq );
 
 		if (db->scsiReq->io_Error) {
-			DisplayAlert(RECOVERY_ALERT, (CONST_STRPTR)"\x00\x10\x14[cdtv.device] scsi enquiry failed\x00", 26);
+			DisplayAlert(RECOVERY_ALERT, (CONST_STRPTR)"\x00\x10\x0A[cdtv.device] scsi enquiry failed\x00", 26);
 			DebugSCSIerror(error, &db->scsiCmd);
 			terminate=TRUE;
 			break;
@@ -159,9 +159,9 @@ void devHandler(void)
 		// check we have an optical drive connected
 		temp = (db->buffer[0] & 31);
 		if (temp!=5){
-			RawDoFmt((CONST_STRPTR)"\x00\x10\x14[cdtv.device] not an optical drive (found type 0x%02x)\x00", &temp, (void (*)(void))&putChar, alerttext );
-			DisplayAlert(RECOVERY_ALERT, alerttext, 26);
 			Dbgf(((CONST_STRPTR)"[cdtv] not an optical drive (found type 0x%02x) - fatal\n",temp));
+			RawDoFmt((CONST_STRPTR)"\x00\x10\x0A[cdtv.device] not an optical drive (found type 0x%02x)\x00", &temp, (void (*)(void))&putChar, alerttext );
+			DisplayAlert(RECOVERY_ALERT, alerttext, 26);
 			terminate=TRUE;
 			break;
 		}
@@ -454,10 +454,15 @@ void devHandler(void)
 								break;
 
 							case CDTV_READ:
-								cdtvRead(db,db->blocking_ioReq);
+								cdtvRead(db,db->blocking_ioReq,TRUE);
 								ReplyMsg(&db->blocking_ioReq->io_Message);
 								break;
-							
+
+							case CDTV_READXL:
+								cdtvReadXL(db,db->blocking_ioReq);
+								ReplyMsg(&db->blocking_ioReq->io_Message);
+								break;
+
 							case CDTV_SEEK:
 								cdtvSeek(db,db->blocking_ioReq);
 								ReplyMsg(&db->blocking_ioReq->io_Message);
@@ -474,7 +479,7 @@ void devHandler(void)
 								break;		
 								
 							default: // This should never execute - but catch anyway
-								Dbgf(((CONST_STRPTR) "[cdtv] unhandled task command 0x%x\n",db->blocking_ioReq->io_Command));
+								Dbgf(((CONST_STRPTR) "[cdtv] unhandled task command 0x%lx\n",db->blocking_ioReq->io_Command));
 								db->blocking_ioReq->io_Error = CDERR_NOCMD;
 								ReplyMsg(&db->blocking_ioReq->io_Message); 
 								break;
