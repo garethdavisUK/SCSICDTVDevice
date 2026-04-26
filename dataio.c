@@ -553,13 +553,13 @@ void cdtvReadXL(struct devBase * db,struct IOStdReq *readReq){
 
 		if (currentNode->DoneFunc != NULL){
 			// This node has a completion function - trigger it now that the read is done
+			Dbgf(((CONST_STRPTR) "[cdtv] callback node 0x%lx\n",(APTR)(currentNode)));
 			completeInt.is_Node.ln_Type = NT_UNKNOWN;
 			completeInt.is_Code = currentNode->DoneFunc; // Trigger the complete function
 			completeInt.is_Data = NULL; // No data to pass, just want to trigger the interrupt
 			completeInt.is_Node.ln_Pri = 0; 	
 			completeInt.is_Node.ln_Name = (char *)(STRPTR)"CDTVReadXLCompleteInt";
 			regA2 = (APTR)(currentNode); // Pass pointer to current node in A2 as argument to the complete function 
-			Dbgf(((CONST_STRPTR) "[cdtv] callback 0x%lx\n",regA2));
 			Cause(&completeInt);
 		}
 
