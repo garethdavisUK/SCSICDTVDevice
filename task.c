@@ -413,18 +413,20 @@ void devHandler(void)
 					default:
 						// Following commands requires drive to be ready				
 						if (!db->driveready){
+							Dbg("- CDERR_NODISK");
 							db->blocking_ioReq->io_Error = CDERR_NODISK;
 							ReplyMsg(&db->blocking_ioReq->io_Message);
 							break;
 						}
 						
 						if (db->discSummary.LastTrack==0xFF){
+							Dbg("- CDERR_BADTOC");
 							db->blocking_ioReq->io_Error = CDERR_BADTOC;
 							ReplyMsg(&db->blocking_ioReq->io_Message);
 							break;
 						}
 												
-						switch (db->dev_ioReq->io_Command) {
+						switch (db->blocking_ioReq->io_Command) {
 							case CDTV_MOTOR:
 								db->blocking_ioReq->io_Actual = cdtvSetMotor(db,db->blocking_ioReq,db->blocking_ioReq->io_Length);
 								ReplyMsg(&db->blocking_ioReq->io_Message);

@@ -48,7 +48,7 @@ __attribute__((used,no_reorder)) static const struct Resident romTag = {
 // Called as Exec initialises devices
 struct Library * init(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct devBase *db asm("d0"))
 {	
-    Dbg("init()");
+    Dbg("dev_init()");
 
     struct taskMessage tm;
 
@@ -114,7 +114,7 @@ static BPTR __attribute__((used)) expunge(struct devBase *db asm("a6"))
 
     struct taskMessage tm;
 
-    Dbg("expunge()");
+    Dbg("dev_expunge()");
 
     if (db->devNode.lib_OpenCnt != 0)
     {
@@ -142,7 +142,7 @@ static BPTR __attribute__((used)) expunge(struct devBase *db asm("a6"))
     Remove(&db->devNode.lib_Node);
     FreeMem((char *)db - db->devNode.lib_NegSize, db->devNode.lib_NegSize + db->devNode.lib_PosSize);
 
-    Dbg("expunge() complete");
+    Dbg("dev_expunge() complete");
 
     return seg_list;
 }
@@ -150,7 +150,7 @@ static BPTR __attribute__((used)) expunge(struct devBase *db asm("a6"))
 // An Exec OpenDevice request  
 static void __attribute__((used)) open(struct devBase *db asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
-    Dbg("open()");
+    Dbg("dev_open()");
     
     //Set default response to error in case we return early
     ioreq->io_Error = IOERR_OPENFAIL;
@@ -172,7 +172,7 @@ static void __attribute__((used)) open(struct devBase *db asm("a6"), struct IORe
 // An Exec CloseDevice request
 static BPTR __attribute__((used)) close(struct devBase *db asm("a6"), struct IORequest *ioreq asm("a1"))
 {
-    Dbg("close()");
+    Dbg("dev_close()");
 
     //Clear the ioreq to prevent reuse
     ioreq->io_Device = NULL;
@@ -194,14 +194,173 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
     struct ExecBase *SysBase = db->SysBase; // Restore Exec
 	UWORD cmd;
 
-	//Cast request to IOStdReq
+	//Cast request to IOStdReq, and set default reply (can be overridden by individual command handlers)
 	db->dev_ioReq = (struct IOStdReq *)ioreq;
-    db->dev_ioReq->io_Error = 0;
-	db->dev_ioReq->io_Actual = 0;
+    db->dev_ioReq->io_Error = 0; // Success by default 
+	db->dev_ioReq->io_Actual = 0; // Default to no bytes transferred
     cmd=ioreq->io_Command;
+
+    #if DEBUG
+    switch(cmd) 
+    {
+        case CDTV_RESET:
+            Dbg("dev_beginIO() RESET");
+            break;
+        case CDTV_READ:
+            Dbg("dev_beginIO() READ");
+            break;
+        case CDTV_WRITE:
+            Dbg("dev_beginIO() WRITE");
+            break;
+        case CDTV_UPDATE:
+            Dbg("dev_beginIO() UPDATE");
+            break;
+        case CDTV_CLEAR:
+            Dbg("dev_beginIO() CLEAR");
+            break;
+        case CDTV_STOP:
+            Dbg("dev_beginIO() STOP");
+            break;
+        case CDTV_START:
+            Dbg("dev_beginIO() START");
+            break;
+        case CDTV_FLUSH:
+            Dbg("dev_beginIO() FLUSH");
+            break;
+        case CDTV_MOTOR:
+            Dbg("dev_beginIO() MOTOR");
+            break;
+        case CDTV_SEEK:
+            Dbg("dev_beginIO() SEEK");
+            break;
+        case CDTV_FORMAT:
+            Dbg("dev_beginIO() FORMAT");
+            break;
+        case CDTV_REMOVE:
+            Dbg("dev_beginIO() REMOVE");
+            break;
+        case CDTV_CHANGENUM:
+            Dbg("dev_beginIO() CHANGENUM");
+            break;
+        case CDTV_CHANGESTATE:
+            Dbg("dev_beginIO() CHANGESTATE");
+            break;
+        case CDTV_PROTSTATUS:
+            Dbg("dev_beginIO() PROTSTATUS");
+            break;
+        case CDTV_GETDRIVETYPE:
+            Dbg("dev_beginIO() GETDRIVETYPE");
+            break;
+        case CDTV_GETNUMTRACKS:
+            Dbg("dev_beginIO() GETNUMTRACKS");
+            break;
+        case CDTV_ADDCHANGEINT:
+            Dbg("dev_beginIO() ADDCHANGEINT");
+            break;
+        case CDTV_REMCHANGEINT:
+            Dbg("dev_beginIO() REMCHANGEINT");
+            break;
+        case CDTV_GETGEOMETRY:
+            Dbg("dev_beginIO() GETGEOMETRY");
+            break;
+        case CDTV_EJECT:
+            Dbg("dev_beginIO() EJECT");
+            break;
+        case CDTV_DIRECT:
+            Dbg("dev_beginIO() DIRECT");
+            break;
+        case CDTV_STATUS:
+            Dbg("dev_beginIO() STATUS");
+            break;
+        case CDTV_QUICKSTATUS:
+            Dbg("dev_beginIO() QUICKSTATUS");
+            break;
+        case CDTV_INFO:
+            Dbg("dev_beginIO() INFO");
+            break;
+        case CDTV_ERRORINFO:
+            Dbg("dev_beginIO() ERRORINFO");
+            break;
+        case CDTV_ISROM:
+            Dbg("dev_beginIO() ISROM");
+            break;
+        case CDTV_OPTIONS:
+            Dbg("dev_beginIO() OPTIONS");
+            break;
+        case CDTV_FRONTPANEL:
+            Dbg("dev_beginIO() FRONTPANEL");
+            break;
+        case CDTV_FRAMECALL:
+            Dbg("dev_beginIO() FRAMECALL");
+            break;
+        case CDTV_FRAMECOUNT:
+            Dbg("dev_beginIO() FRAMECOUNT");
+            break;
+        case CDTV_READXL:
+            Dbg("dev_beginIO() READXL");
+            break;
+        case CDTV_PLAYTRACK:
+            Dbg("dev_beginIO() PLAYTRACK");
+            break;
+        case CDTV_PLAYLSN:
+            Dbg("dev_beginIO() PLAYLSN");
+            break;
+        case CDTV_PLAYMSF:
+            Dbg("dev_beginIO() PLAYMSF");
+            break;
+        case CDTV_PLAYSEGSLSN:
+            Dbg("dev_beginIO() PLAYSEGSLSN");
+            break;
+        case CDTV_PLAYSEGSMSF:
+            Dbg("dev_beginIO() PLAYSEGSMSF");
+            break;
+        case CDTV_TOCLSN:
+            Dbg("dev_beginIO() TOCLSN");
+            break;
+        case CDTV_TOCMSF:
+            Dbg("dev_beginIO() TOCMSF");
+            break;
+        case CDTV_SUBQLSN:
+            Dbg("dev_beginIO() SUBQLSN");
+            break;
+        case CDTV_SUBQMSF:
+            Dbg("dev_beginIO() SUBQMSF");
+            break;
+        case CDTV_PAUSE:
+            Dbg("dev_beginIO() PAUSE");
+            break;
+        case CDTV_STOPPLAY:
+            Dbg("dev_beginIO() STOPPLAY");
+            break;
+        case CDTV_POKESEGLSN:
+            Dbg("dev_beginIO() POKESEGLSN");
+            break;
+        case CDTV_POKESEGMSF:
+            Dbg("dev_beginIO() POKESEGMSF");
+            break;
+        case CDTV_MUTE:
+            Dbg("dev_beginIO() MUTE");
+            break;
+        case CDTV_FADE:
+            Dbg("dev_beginIO() FADE");
+            break;
+        case CDTV_POKEPLAYLSN:
+            Dbg("dev_beginIO() POKEPLAYLSN");
+            break;
+        case CDTV_POKEPLAYMSF:
+            Dbg("dev_beginIO() POKEPLAYMSF");
+            break;
+        case CDTV_GENLOCK:
+            Dbg("dev_beginIO() GENLOCK");
+            break;
+        default:
+            Dbgf(((CONST_STRPTR) "[cdtv] dev_beginIO() UNKNOWN %lu\n",ioreq->io_Command));
+            break;
+    }   
+    # endif
+
+    // ADDCHANGEINT, CDTV_QUICKSTATUS, CDTV_REMCHANGEINT, CDTV_CHANGENUM, CDTV_CHANGESTATE need to be returned immediately
 	
-	// ADDCHANGEINT, CDTV_QUICKSTATUS, CDTV_REMCHANGEINT, CDTV_CHANGENUM, CDTV_CHANGESTATE need to be returned immediately
-	Dbgf(((CONST_STRPTR) "[cdtv] cmd=%lu\n",ioreq->io_Command));
     switch(cmd) 
     {
 		case CDTV_ADDCHANGEINT:
@@ -217,26 +376,26 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
 
 			// Command does not reply until interrupt removed, so store ioReq
             db->changeInt_ioReq = (struct IOStdReq *)ioreq;
-			return;
+			return; // Don't process remander of switch statement
 			break;
 		
 		case CDTV_REMCHANGEINT:
 			db->changeInt = NULL;
             ReplyMsg(&db->changeInt_ioReq->io_Message); // Reply to the ioReq that set the interrupt
 			ReplyMsg(&db->dev_ioReq->io_Message);
-			return;
+			return; // Don't process remander of switch statement
 			break;
 
 		case CDTV_CHANGENUM:
 			db->dev_ioReq->io_Actual = db->discchanges;
 			ReplyMsg(&db->dev_ioReq->io_Message);
-			return;
+			return; // Don't process remander of switch statement
 			break;		
 
 		case CDTV_CHANGESTATE:
 			if (db->driveready) db->dev_ioReq->io_Actual = 0; else db->dev_ioReq->io_Actual = 1; 
 			ReplyMsg(&db->dev_ioReq->io_Message);
-			return;
+			return; // Don't process remander of switch statement
 			break;		
 		
 		case CDTV_STATUS:		// CDTV_STATUS not documented but seems to do same as CDTV_QUICKSTATUS
@@ -246,9 +405,10 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
 			if (db->lasterror) db->dev_ioReq->io_Actual =  db->dev_ioReq->io_Actual | QSF_ERROR;
 			if (db->cdda_ioreq) db->dev_ioReq->io_Actual =  db->dev_ioReq->io_Actual | QSF_AUDIO;
 			ReplyMsg(&db->dev_ioReq->io_Message);
-			return;		
+			return; // Don't process remander of switch statement
 	        break;
-	}	
+
+    }	
 
 
 	// If still here them it's a command that needs queuing
@@ -258,6 +418,25 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
     switch(cmd) 
     {
 	    //implemented in some way
+
+        //Commands that do nothing - defined as NOP in developer guide
+        case CDTV_FLUSH:
+		case CDTV_UPDATE:
+		case CDTV_CLEAR:
+		case CDTV_STOP:
+		case CDTV_START:
+		case CDTV_REMOVE:
+			ReplyMsg(&db->dev_ioReq->io_Message);
+			break;    
+
+		//Commands that always return write protect error
+		case CDTV_PROTSTATUS:
+		case CDTV_FORMAT:
+        case CDTV_WRITE:
+            Dbg("CDERR_WRITEPROT");
+            db->dev_ioReq->io_Error = CDERR_WRITEPROT;
+			ReplyMsg(&db->dev_ioReq->io_Message);
+			break;
 
 		//Comands that don't block drive (non blocking commands port)
 	    case CDTV_GETDRIVETYPE:
@@ -289,28 +468,7 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
         case CDTV_TOCMSF:
 			PutMsg(db->devPort, &db->dev_ioReq->io_Message);
             break;
-
-		//Always return write protect error
-		case CDTV_PROTSTATUS:
-		case CDTV_FORMAT:
-        case CDTV_WRITE:
-            Dbg("CDERR_WRITEPROT");
-            db->dev_ioReq->io_Error = CDERR_WRITEPROT;
-			ReplyMsg(&db->dev_ioReq->io_Message);
-			break;
- 
-		//Commands that do nothing - defined as NOP in developer guide
-        case CDTV_FLUSH:
-		case CDTV_UPDATE:
-		case CDTV_CLEAR:
-		case CDTV_STOP:
-		case CDTV_START:
-		case CDTV_REMOVE:
-            // Dbgf(((CONST_STRPTR) "[cdtv] NOP command %lu\n",cmd));
-			ReplyMsg(&db->dev_ioReq->io_Message);
-			break;
-			
- 
+  
 		//Not yet implemented audio commands
 		//return OK as should be harmless (just no audio changes)
         case CDTV_FADE:
@@ -398,7 +556,7 @@ static ULONG __attribute__((used)) abortIO(struct devBase *db asm("a6"), struct 
     if ((struct IOStdReq *)ioreq == db->blocking_ioReq) {
 
         // Abort of current blocking request, set flag for handler task to check and abort if possible 
-        Dbg("abort_io() current");
+        Dbg("dev_abortIO() current");
         
         db->abortPending = TRUE;
 
@@ -406,7 +564,7 @@ static ULONG __attribute__((used)) abortIO(struct devBase *db asm("a6"), struct 
         // Abort of non-current request, Search the queued blocking iorequests in the message port for it 
         // Method copied from Olaf Barthel's Trackfile.device https://github.com/obarthel/trackfile-device
 
-        Dbg("abort_io() non-current");
+        Dbg("dev_abortIO() non-current");
         
         Disable();
 

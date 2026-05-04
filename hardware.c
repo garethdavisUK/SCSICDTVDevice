@@ -192,11 +192,14 @@ void cdtvISROM(struct devBase * db,struct IOStdReq *iostd){
 void cdtvOptions(struct devBase * db,struct IOStdReq *iostd){
 	//This is undocumented, so log to debug and return success for now
 	switch (iostd->io_Offset){
+		case 0:
+			Dbgf(((CONST_STRPTR) "[cdtv] DEBUG data=%lx\n",iostd->io_Data));
+			break;
 		case CDTV_OPTIONS_BLOCK_SIZE:
-			Dbgf(((CONST_STRPTR) "[cdtv] CDTV_OPTIONS_BLOCK_SIZE data=%lx length=%lx\n",iostd->io_Data,iostd->io_Length));
+			Dbgf(((CONST_STRPTR) "[cdtv] BLOCK_SIZE data=%lx\n",iostd->io_Data));
 			break;
 		case CDTV_OPTIONS_ERROR_TYPE:
-			Dbgf(((CONST_STRPTR) "[cdtv] CDTV_OPTIONS_ERROR_TYPE data=%lx length=%lx\n",iostd->io_Data,iostd->io_Length));
+			Dbgf(((CONST_STRPTR) "[cdtv] ERROR_TYPE data=%lx\n",iostd->io_Data));
 			break;
 		default:
 			Dbgf(((CONST_STRPTR) "[cdtv] unknown option=%lx data=%lx length=%lx\n",iostd->io_Offset,iostd->io_Data,iostd->io_Length));
