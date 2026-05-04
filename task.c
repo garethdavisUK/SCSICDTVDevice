@@ -1,4 +1,6 @@
-//task.c - main task handler for cdtv.device
+// task.c - main task handler for SCSI cdtv.device
+// Part of SCSI CDTV Device, an open source CDTV SCSI drive device driver - http://github.com/garethdavisuk/SCSICDTVDevice/
+// Copyright (c) 2026 Gareth Davis. All new code released under GPL v2. See README in project root.
 
 #include "globals.h"
 #include "task.h"

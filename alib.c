@@ -1,7 +1,8 @@
 // alib.c - amiga.lib for SCSI cdtv.device
+// Part of SCSI CDTV Device, an open source CDTV SCSI drive device driver - http://github.com/garethdavisuk/SCSICDTVDevice/
+// Copyright (c) 2026 Gareth Davis. All new code released under GPL v2. See README in project root.
 
-// Following are replacements for amiga.lib routines that require a global SysBase 
-// which isn't available in resident code
+// Following are replacements for amiga.lib routines that are not available in resident code
 
 // Based on routines at https://github.com/LIV2/lide.device/blob/master/lide_alib.c
 

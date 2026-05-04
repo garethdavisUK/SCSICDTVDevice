@@ -1,3 +1,7 @@
+# Makefile for SCSI cdtv.device
+# Part of SCSI CDTV Device, an open source CDTV SCSI drive device driver - http://github.com/garethdavisuk/SCSICDTVDevice/
+# Copyright (c) 2026 Gareth Davis. All new code released under GPL v2. See README in project root.
+
 FILENAME=cdtv.device
 RELDIR=build-release
 DEBUGDIR=build-debug
@@ -7,34 +11,22 @@ SHELL=sh
 SRCDIRS=.
 INCDIRS=.
 
-#TARGET = elf-toolchain
 TARGET = hunk-toolchain
 
 ifeq ($(MAKECMDGOALS), debug)
  DIR=$(DEBUGDIR)
- EXTRA_CFLAGS+= -g -O2
+ EXTRA_CFLAGS+= -g -O2 -DDEBUG
  EXTRA_ASFLAGS+= -g
- ifeq ($(TARGET), hunk-toolchain)
-  EXTRA_CFLAGS+= -DDEBUG 
-  EXTRA_LDFLAGS+= -ldebug
- endif
+ EXTRA_LDFLAGS+= -ldebug
 else
  DIR=$(RELDIR)
  EXTRA_CFLAGS+= -s -O2
 endif
 
-ifeq ($(TARGET), elf-toolchain)
- CC=m68k-amiga-elf-gcc
- AS=m68k-amiga-elf-as
- ELF_SUFFIX=.elf
- EXTRA_LDFLAGS+= -Wl,--emit-relocs,-Ttext=0,-Map=$(DIR)/$(FILENAME)$(ELF_SUFFIX).map
-endif
 
-ifeq ($(TARGET), hunk-toolchain)
- CC=m68k-amigaos-gcc
- AS=m68k-amigaos-as
- EXTRA_LDFLAGS+= -Wl,-Map=$(DIR)/$(FILENAME).map
-endif
+CC=m68k-amigaos-gcc
+AS=m68k-amigaos-as
+EXTRA_LDFLAGS+= -Wl,-Map=$(DIR)/$(FILENAME).map
 
 CFLAGS+= -m68000 -Wall -Wextra -Wno-unused-parameter -fomit-frame-pointer -resident -mcrt=nix13
 ASFLAGS+= -m68000
@@ -54,12 +46,8 @@ vpath %.s $(SRCDIRS)
 release: $(TARGET)
 debug: $(TARGET)
 
-elf-toolchain: $(DIR) $(OBJS) $(DIR)/$(FILENAME)
-	elf2hunk $(DIR)/$(FILENAME)$(ELF_SUFFIX) $(DIR)/$(FILENAME)
-	m68k-amiga-elf-objdump -D $(DIR)/$(FILENAME)$(ELF_SUFFIX) > $(DIR)/$(FILENAME)$(ELF_SUFFIX).s
-#	m68k-amigaos-objdump -D $(DIR)/$(FILENAME) > $(DIR)/$(FILENAME).s
 
-$(DIR)/$(FILENAME): #ELF_SUFFIX is empty for hunk-toolchain so this below works for both targets
+$(DIR)/$(FILENAME):
 	$(CC) $(CFLAGS) -o $@$(ELF_SUFFIX) $(OBJS) $(LDFLAGS)
 
 hunk-toolchain: $(DIR) $(OBJS) $(DIR)/$(FILENAME)

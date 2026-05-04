@@ -38,12 +38,12 @@ The driver attempts to open scsi.device unit 6 and then 2nd.scsi.device unit 6. 
 
 I've used Pioneer SCSI 2 CD-ROM drives for testing, but any other vendor should work as long as they follow the SCSI 2 command set. My reason for choosing the Pioneer is that it's a slot loader, and so should be possible to mount in place of the factory CD drive without needing to modify the front panel should I ever reach that stage.
 
-You'll also need to find a way of combining the audio output from the drive with the CDTV Paula sound if playing titles with CDDA audio. Although the CDTV schematics say CN26 is a CD audio interface, I believe it only carries subcode for updating the VFD track information.  
+You'll also need to find a way of combining the audio output from the drive with the CDTV Paula sound if playing titles with CDDA audio. Although the CDTV schematics say CN26 is a CD audio interface, this is for audio control only.   
 
 ## Building and testing
-This has been developed using [Bebbo's gcc toolchain](https://franke.ms/git/bebbo/amiga-gcc), I've left the Bartman toolchain commands in the Makefile from SimpleDevice on which this device was based, but they are untested - and probably won't work due to the register assigments in function calls. 
+This has been developed using [Bebbo's gcc toolchain](https://franke.ms/git/bebbo/amiga-gcc), and the VSCode IDE.
 
-I've also used VSCode IDE, and left in a working .vscode config folder which you'll probably need to adjust to your gcc-executable and KS1.3 include paths to make VSCode work properly. 
+I've left in a working .vscode config folder, I expect you'll need to adjust to your gcc-executable and KS1.3 include paths to point to your toolchain installation to make VSCode work properly. 
 
 Building remains the same as in SimpleDevice...
 
@@ -59,7 +59,9 @@ The debug build sends a fair amount of debug output to the serial port, and is o
 ### Testing
 The driver can be softloaded on a V37 kickstart CDTV using the LoadModule11.lha package from Aminet. The driver is V34 compatible, but LoadModule doesn't have any success making it resident under V34. I also use Capitoline in my testing workflow to substitute the release cdtv.device into the CDTVLand 2.35 extended rom, then flash the rom into a CDTV developer EEPROM board. It then successfully boots titles with KS1.3 or 2.04 enabled on the CDTV, subject to the issues mentioned above.    
 
-There are known differences in behaviour between using LoadModule and running direct from a custom ROM, for example Sim City hangs after terraforming from LoadModule, but doesn't when the device is in ROM. I expect it's due to the additional RAM consumed.  
+There are known differences in behaviour between using LoadModule and running direct from a custom ROM, for example Sim City hangs after terraforming from LoadModule, but doesn't when the device is in ROM. Maybe changes are due to the additional RAM consumed?
+
+Also I've tried running it under WinUAE
 
 ### SCSI POST timeouts
 The SCSI adaptor for the CDTV has some pretty generous timeouts to allow devices to become ready after POST. The behaviour of these timeouts isn't changed by loading this module, so you may be subjected to the same 60+ second wait every reboot as the SCSI adaptor scans for devices, then waits for them to become ready. I've observed a 60-70 second pause at post when an empty CD-ROM drive is on the SCSI bus on my test system, which disappears when the drive is loaded. 
@@ -69,6 +71,8 @@ I expect the A590 Handler module will need patching to sort this, but that's cur
 ## Acknowledgments
 This is based on the Jorgen Bilander's [SimpleDevice](https://github.com/jbilander/SimpleDevice), with inspiration taken from Matt Harlum's [lide.device](https://github.com/LIV2/lide.device) and Olaf Barthel's [trackfile-device](https://github.com/obarthel/trackfile-device) as I was navigating through the vaguaries of creating a module that will RTF_COLDSTART successfully. 
 
+Thanks also go to those on the CDTVLand Discord who've provided assistance so far.
+
 ## License
-All software contained that is not provided by a third-party is licensed under the GPL-2.0 only license 
+All software contained that is not provided by a third-party is licensed under the GPL-2.0 license 
 [![License: GPL v2](https://img.shields.io/badge/License-GPL_v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
