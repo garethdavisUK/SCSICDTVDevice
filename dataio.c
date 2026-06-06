@@ -510,6 +510,7 @@ void cdtvReadXL(struct devBase * db,struct IOStdReq *readReq){
 	struct Interrupt completeInt;
 
 	register APTR *regA2 asm ("a2");
+	(void)regA2; // Suppress unused variable warning
 	
 	ULONG startaddress, bytesread, byteslength;
 	startaddress = readReq->io_Offset*db->discblocksize;
@@ -560,7 +561,7 @@ void cdtvReadXL(struct devBase * db,struct IOStdReq *readReq){
 			completeInt.is_Code = currentNode->DoneFunc; // Trigger the complete function
 			completeInt.is_Data = NULL; // No data to pass, just want to trigger the interrupt
 			completeInt.is_Node.ln_Pri = 0; 	
-			completeInt.is_Node.ln_Name = (char *)(STRPTR)"CDTVReadXLCompleteInt";
+			completeInt.is_Node.ln_Name = (char *)(STRPTR)"ReadXL";
 			regA2 = (APTR)(currentNode); // Pass pointer to current node in A2 as argument to the complete function 
 			Cause(&completeInt);
 		}

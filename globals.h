@@ -23,11 +23,11 @@
 #include <devices/trackdisk.h>
 #include <devices/timer.h>
 #include <dos/dostags.h>
-#include <intuition/intuition.h>
+//#include <intuition/intuition.h>
 #include <utility/tagitem.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
-#include <proto/intuition.h>
+//#include <proto/intuition.h>
 
 #include <clib/intuition_protos.h>
 #include <string.h>
@@ -72,7 +72,6 @@ struct devBase {
     struct MsgPort      *taskPort;          // Port used to syncronise device state 
     struct MsgPort 		*devPort;           // Blocking request message port
 	struct MsgPort 		*nbdevPort;         // Non-blocking request message port
-	struct IOStdReq 	*dev_ioReq;         // Current device request
     struct IOStdReq 	*blocking_ioReq;    // Current blocking device request
     
     BOOL                abortPending;       // AbortIO request received for current blocking IORequest

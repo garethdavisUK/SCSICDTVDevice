@@ -7,7 +7,7 @@ This translates the device calls into SCSI 2 compatible CD-ROM commands and send
 ## Status of the project
 This is best described as a bunch of loosly held together hacks that can successfully boot fairly simple titles like the CDPD workbench discs. This is nowhere near production quality code yet, this repo is here primarily for storage rather than sharing my work. There are no releases as yet.
 
-The device is currently doing something making cdstrap unhappy, causing it not to open the initial CDTV animation screen and TM once booting. If a CDTV title doesn't open its own screen during boot, you'll stay on a black screen. Sim City opens a new screen, Defender of the Crown does not, and Lemmings only opens a screen under on KS1.3.
+The device is currently doing something making cdstrap unhappy, causing it not to open the trademark screen once booting. If a CDTV title doesn't open its own screen during boot, you'll stay on a black screen. Sim City opens a new screen, Defender of the Crown does not, and Lemmings only opens a screen under on KS1.3.
 
 For this reason I'd advise people not to go building and burning this into ROMs right now, and is why I'm not including a binary module.
 
@@ -21,10 +21,10 @@ From a driver level here is what I think is currently working, what this transla
 I've also implemented HD_SCSICMD which allows a SCSI direct command to be sent to the drive if something not covered in the CDTV interface is required, like fetching subcode channels or setting drive speed.
 
 ### What doesn't work
-* As already mentioned, cdstrap does not open the CDTV animation screen on reboot.
+* As already mentioned, cdstrap does not open the TM screen when booting from CD.
 * CDTV_FADE is not implemented, so audio transitions sound off.
 * CDTV_READXL command
-* Any commands that depend on the frame timer like CDTV_FRAMECALL
+* Any commands that depend on the frame interrupt like CDTV_FRAMECALL
 * Any of the CD audio commands that pass a tracklist (the PLAY commands with 'SEG' in the name) 
 * Hardware commands like CDTV_FRONTPANEL and CDTV_GENLOCK
 * Front panel buttons, and VFD display of track information during CDDA playback
@@ -54,14 +54,14 @@ Building remains the same as in SimpleDevice...
 * clean release: `make cleanrelease`
 * clean both: `make clean`
 
-The debug build sends a fair amount of debug output to the serial port, and is over 10 times the size. There's no chance of it fitting in ROM and it's also likely to cause a RAM shortage if softloaded on an unexpanded CDTV. 
+The debug build sends a fair amount of debug output to the serial port, and is over 10 times the size. There's no chance of it fitting in ROM and it's also likely to cause a RAM shortage if softloaded on an unexpanded CDTV. The unit used for testing has an 8MB RAM expansion. 
 
 ### Testing
-The driver can be softloaded on a V37 kickstart CDTV using the LoadModule11.lha package from Aminet. The driver is V34 compatible, but LoadModule doesn't have any success making it resident under V34. I also use Capitoline in my testing workflow to substitute the release cdtv.device into the CDTVLand 2.35 extended rom, then flash the rom into a CDTV developer EEPROM board. It then successfully boots titles with KS1.3 or 2.04 enabled on the CDTV, subject to the issues mentioned above.    
+The driver can be softloaded on a V37 kickstart CDTV using the LoadModule11.lha package from Aminet, and the driver is also V34 compatible. Most 1.3 ROMs contain a bug that causes ExecBase to get scrubbed on reboot when more than 512K Chip RAM is present, which prevents LoadModule surviving a reboot. The workaround for 1.3 is to run SetPatch with the R option in the startup-sequence before running LoadModule. Even then it will only survive a single reboot, unless the next drive to boot also does a SetPatch R.
+
+I also use Capitoline in my testing workflow to substitute the release cdtv.device into the CDTVLand 2.35 extended rom, then flash the rom into a CDTV developer EEPROM board. It then successfully boots titles with KS1.3 or 2.04 enabled on the CDTV, subject to the issues mentioned above.    
 
 There are known differences in behaviour between using LoadModule and running direct from a custom ROM, for example Sim City hangs after terraforming from LoadModule, but doesn't when the device is in ROM. Maybe changes are due to the additional RAM consumed?
-
-Also I've tried running it under WinUAE
 
 ### SCSI POST timeouts
 The SCSI adaptor for the CDTV has some pretty generous timeouts to allow devices to become ready after POST. The behaviour of these timeouts isn't changed by loading this module, so you may be subjected to the same 60+ second wait every reboot as the SCSI adaptor scans for devices, then waits for them to become ready. I've observed a 60-70 second pause at post when an empty CD-ROM drive is on the SCSI bus on my test system, which disappears when the drive is loaded. 

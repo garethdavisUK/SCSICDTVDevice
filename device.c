@@ -48,7 +48,7 @@ __attribute__((used,no_reorder)) static const struct Resident romTag = {
 // Called as Exec initialises devices
 struct Library * init(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct devBase *db asm("d0"))
 {	
-    Dbg("dev_init()");
+    Dbg("dev_init() version " XSTR(DEVICE_ID_STRING));
 
     struct taskMessage tm;
 
@@ -192,16 +192,15 @@ static BPTR __attribute__((used)) close(struct devBase *db asm("a6"), struct IOR
 static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct IORequest *ioreq asm("a1"))
 {
     struct ExecBase *SysBase = db->SysBase; // Restore Exec
-	UWORD cmd;
 
 	//Cast request to IOStdReq, and set default reply (can be overridden by individual command handlers)
-	db->dev_ioReq = (struct IOStdReq *)ioreq;
-    db->dev_ioReq->io_Error = 0; // Success by default 
-	db->dev_ioReq->io_Actual = 0; // Default to no bytes transferred
-    cmd=ioreq->io_Command;
+    struct IOStdReq *thisReq = (struct IOStdReq *)ioreq;
+	//thisReq = (struct IOStdReq *)ioreq;
+    thisReq->io_Error = 0; // Success by default 
+	thisReq->io_Actual = 0; // Default to no bytes transferred
 
     #if DEBUG
-    switch(cmd) 
+    switch(thisReq->io_Command) 
     {
         case CDTV_RESET:
             Dbg("dev_beginIO() RESET");
@@ -361,8 +360,9 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
 
     // ADDCHANGEINT, CDTV_QUICKSTATUS, CDTV_REMCHANGEINT, CDTV_CHANGENUM, CDTV_CHANGESTATE need to be returned immediately
 	
-    switch(cmd) 
+    switch(thisReq->io_Command) 
     {
+
 		case CDTV_ADDCHANGEINT:
             if (db->changeInt != NULL){
                 // Interrupt is being overwritten - clear the existing interrupt
@@ -372,53 +372,38 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
                 ReplyMsg(&db->changeInt_ioReq->io_Message); // Reply to the ioReq that previously set the interrupt
             }
 
-			db->changeInt = db->dev_ioReq->io_Data;
+			db->changeInt = thisReq->io_Data;
 
 			// Command does not reply until interrupt removed, so store ioReq
             db->changeInt_ioReq = (struct IOStdReq *)ioreq;
-			return; // Don't process remander of switch statement
 			break;
 		
 		case CDTV_REMCHANGEINT:
 			db->changeInt = NULL;
             ReplyMsg(&db->changeInt_ioReq->io_Message); // Reply to the ioReq that set the interrupt
-			ReplyMsg(&db->dev_ioReq->io_Message);
-			return; // Don't process remander of switch statement
+			ReplyMsg(&thisReq->io_Message);
 			break;
 
 		case CDTV_CHANGENUM:
-			db->dev_ioReq->io_Actual = db->discchanges;
-			ReplyMsg(&db->dev_ioReq->io_Message);
-			return; // Don't process remander of switch statement
+			thisReq->io_Actual = db->discchanges;
+			ReplyMsg(&thisReq->io_Message);
 			break;		
 
 		case CDTV_CHANGESTATE:
-			if (db->driveready) db->dev_ioReq->io_Actual = 0; else db->dev_ioReq->io_Actual = 1; 
-			ReplyMsg(&db->dev_ioReq->io_Message);
-			return; // Don't process remander of switch statement
+			if (db->driveready) thisReq->io_Actual = 0; else thisReq->io_Actual = 1; 
+			ReplyMsg(&thisReq->io_Message);
 			break;		
 		
 		case CDTV_STATUS:		// CDTV_STATUS not documented but seems to do same as CDTV_QUICKSTATUS
 		case CDTV_QUICKSTATUS:
 			// Not fully implemented yet, needs done and position error flags
-			if (db->driveready) db->dev_ioReq->io_Actual = QSF_READY | QSF_SPIN | QSF_DISK;
-			if (db->lasterror) db->dev_ioReq->io_Actual =  db->dev_ioReq->io_Actual | QSF_ERROR;
-			if (db->cdda_ioreq) db->dev_ioReq->io_Actual =  db->dev_ioReq->io_Actual | QSF_AUDIO;
-			ReplyMsg(&db->dev_ioReq->io_Message);
-			return; // Don't process remander of switch statement
+			if (db->driveready) thisReq->io_Actual = QSF_READY | QSF_SPIN | QSF_DISK;
+			if (db->lasterror) thisReq->io_Actual =  thisReq->io_Actual | QSF_ERROR;
+			if (db->cdda_ioreq) thisReq->io_Actual =  thisReq->io_Actual | QSF_AUDIO;
+			ReplyMsg(&thisReq->io_Message);
 	        break;
 
-    }	
-
-
-	// If still here them it's a command that needs queuing
-	// Remove the IOF_QUICK bit and add to queue or reject
-    db->dev_ioReq->io_Flags &= ~IOF_QUICK;
-
-    switch(cmd) 
-    {
 	    //implemented in some way
-
         //Commands that do nothing - defined as NOP in developer guide
         case CDTV_FLUSH:
 		case CDTV_UPDATE:
@@ -426,22 +411,12 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
 		case CDTV_STOP:
 		case CDTV_START:
 		case CDTV_REMOVE:
-			ReplyMsg(&db->dev_ioReq->io_Message);
+            thisReq->io_Flags &= ~IOF_QUICK;
+			ReplyMsg(&thisReq->io_Message);
 			break;    
 
-		//Commands that always return write protect error
-		case CDTV_PROTSTATUS:
-		case CDTV_FORMAT:
-        case CDTV_WRITE:
-            Dbg("CDERR_WRITEPROT");
-            db->dev_ioReq->io_Error = CDERR_WRITEPROT;
-			ReplyMsg(&db->dev_ioReq->io_Message);
-			break;
-
-		//Comands that don't block drive (non blocking commands port)
-	    case CDTV_GETDRIVETYPE:
-		case CDTV_GETGEOMETRY: 		
-		case CDTV_GETNUMTRACKS:		
+		//Immediate (non blocking) commands)
+		case CDTV_GETGEOMETRY: 			
 		case CDTV_INFO: 
 	    case CDTV_ISROM:
         case CDTV_MUTE:        
@@ -449,11 +424,20 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
         case CDTV_STOPPLAY:
 		case CDTV_SUBQLSN:
 		case CDTV_SUBQMSF:
-        case HD_SCSICMD: // Treating as non blocking as we don't know what's been requested
-			PutMsg(db->nbdevPort, &db->dev_ioReq->io_Message);
+            thisReq->io_Flags &= ~IOF_QUICK;
+            if (!db->driveready ) { 
+                Dbg("CDERR_NODISK");
+                thisReq->io_Error = CDERR_NODISK;
+                ReplyMsg(&thisReq->io_Message);
+            } else PutMsg(db->nbdevPort, &thisReq->io_Message);
             break;
 
-		//Commands that affect drive	
+        case HD_SCSICMD: // Treating as non blocking as we don't know what's been requested
+            thisReq->io_Flags &= ~IOF_QUICK;
+			PutMsg(db->nbdevPort, &thisReq->io_Message);
+            break;
+
+		//Blocking commands
 		case CDTV_MOTOR:
         case CDTV_OPTIONS:
      	case CDTV_PLAYLSN:
@@ -466,80 +450,71 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
 		case CDTV_SEEK:
         case CDTV_TOCLSN:
         case CDTV_TOCMSF:
-			PutMsg(db->devPort, &db->dev_ioReq->io_Message);
+			thisReq->io_Flags &= ~IOF_QUICK;
+            if (!db->driveready ) { 
+                Dbg("CDERR_NODISK");
+                thisReq->io_Error = CDERR_NODISK;
+                ReplyMsg(&thisReq->io_Message);
+            } else PutMsg(db->devPort, &thisReq->io_Message);
             break;
   
+        case CDTV_GETDRIVETYPE:
+            //Can be serviced without queuing
+            thisReq->io_Flags &= ~IOF_QUICK;
+            thisReq->io_Actual = DG_CDROM; // Trackdisk device type
+            PutMsg(db->devPort, &thisReq->io_Message);
+            break; 
+                                                    
+        case CDTV_GETNUMTRACKS:		// Not documented - seems to always return 1 unless drive is empty on real CDTV
+            //Can be serviced without queuing
+            thisReq->io_Flags &= ~IOF_QUICK;
+            if (db->driveready) thisReq->io_Actual = 1; else thisReq->io_Actual = 0;
+            PutMsg(db->devPort, &thisReq->io_Message);
+            break;	
+						
+
 		//Not yet implemented audio commands
 		//return OK as should be harmless (just no audio changes)
         case CDTV_FADE:
-            Dbg("CDTV_FADE");
-			ReplyMsg(&db->dev_ioReq->io_Message);
-	        break;      
-
         case CDTV_FRONTPANEL:
-            Dbg("CDTV_FRONTPANEL");
-			ReplyMsg(&db->dev_ioReq->io_Message);
-	        break;     
-
         case CDTV_GENLOCK:
-            Dbg("CDTV_GENLOCK");
-			ReplyMsg(&db->dev_ioReq->io_Message);
-	        break;     
-
         case CDTV_PLAYSEGSLSN:
-            Dbg("CDTV_PLAYSEGSLSN");
-			ReplyMsg(&db->dev_ioReq->io_Message);
-	        break;      
-
         case CDTV_PLAYSEGSMSF:
-            Dbg("CDTV_PLAYSEGSMSF");
-			ReplyMsg(&db->dev_ioReq->io_Message);
-	        break;      
-
         case CDTV_POKESEGLSN:
-            Dbg("CDTV_POKESEGLSN");
-			ReplyMsg(&db->dev_ioReq->io_Message);
-	        break;      
-
         case CDTV_POKESEGMSF:
             Dbg("CDTV_POKESEGMSF");
-			ReplyMsg(&db->dev_ioReq->io_Message);
+            thisReq->io_Flags &= ~IOF_QUICK;
+			ReplyMsg(&thisReq->io_Message);
 	        break;        
         
-
 		//Not yet implemented non-audio commands
 		//returning NOCMD as the calling code would be expecting them to do something		
         case CDTV_FRAMECALL:
-            Dbg("TV_FRAMECALL");
-			db->dev_ioReq->io_Error = CDERR_NOCMD;
-			ReplyMsg(&db->dev_ioReq->io_Message);
-	        break; 
-
         case CDTV_RESET:
-            Dbg("CDTV_RESET");
-			ReplyMsg(&db->dev_ioReq->io_Message);
-	        break;           
-		        
 		//Potentially valid, but undocumented commands
 		//Return NOCMD error until a way of implementing them is found
         case CDTV_DIRECT:
-            Dbg("CDTV_DIRECT");
-			db->dev_ioReq->io_Error = CDERR_NOCMD;
-			ReplyMsg(&db->dev_ioReq->io_Message);
-	        break;
-
         case CDTV_ERRORINFO:
-            Dbg("CDTV_ERRORINFO");
-			db->dev_ioReq->io_Error = CDERR_NOCMD;
-			ReplyMsg(&db->dev_ioReq->io_Message);
+            thisReq->io_Flags &= ~IOF_QUICK;
+			ReplyMsg(&thisReq->io_Message);
 			break;       
-			
+
+   		//Commands that always return write protect error
+		case CDTV_PROTSTATUS:
+		case CDTV_FORMAT:
+        case CDTV_WRITE:
+            Dbg("CDERR_WRITEPROT");
+            thisReq->io_Flags &= ~IOF_QUICK;
+            thisReq->io_Error = CDERR_WRITEPROT;
+			ReplyMsg(&thisReq->io_Message);
+			break;
         
         //Anything else isn't valid, so should error
         case CMD_INVALID:
         default:
-            db->dev_ioReq->io_Error = CDERR_NOCMD;
-            ReplyMsg(&db->dev_ioReq->io_Message);
+            thisReq->io_Flags &= ~IOF_QUICK;
+            thisReq->io_Error = CDERR_NOCMD;
+            ReplyMsg(&thisReq->io_Message);
             Dbg("unhandled command");
             break;
     }

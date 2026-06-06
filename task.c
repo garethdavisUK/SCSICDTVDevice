@@ -17,10 +17,10 @@ void devHandler(void)
 	BYTE error,temp;
 	BOOL terminate=FALSE;
 
-	unsigned char alerttext[255];
+	//unsigned char alerttext[255];
 
 	// For RawDoFmt
-	STATIC CONST ULONG putChar[] = { 0x16c04e75 };
+	//STATIC CONST ULONG putChar[] = { 0x16c04e75 };
 
 	ULONG signal, cmdSig, nbcmdSig, timerSig, taskSig;
 		
@@ -39,7 +39,7 @@ void devHandler(void)
 	struct DOSBase * DOSBase = (struct DOSBase *)OpenLibrary((STRPTR)"dos.library", 34);
 	db->DOSBase = DOSBase;
 
-	struct Library * IntuitionBase = (struct Library *) OpenLibrary((CONST_STRPTR)"intuition.library", 34);
+	//struct Library * IntuitionBase = (struct Library *) OpenLibrary((CONST_STRPTR)"intuition.library", 34);
 	//Only used here
 
 	db->devPort = alib_CreatePort(NULL, 0); //port for standard commands
@@ -102,7 +102,7 @@ void devHandler(void)
 			if ( OpenDevice( (CONST_STRPTR)"2nd.scsi.device", 6, (struct IORequest*) db->scsiReq, 0 ) ) {
 				db->scsiReq->io_Device = NULL;
 				Dbg("scsi open failed");
-				DisplayAlert(RECOVERY_ALERT, (STRPTR)"\x00\x10\x0A[cdtv.device] Unable to open scsi.device or 2nd.scsi.device unit 6\x00", 26);
+//				DisplayAlert(RECOVERY_ALERT, (STRPTR)"\x00\x10\x0A[cdtv.device] Unable to open scsi.device or 2nd.scsi.device unit 6\x00", 26);
 				terminate=TRUE;
 				break;
 			}
@@ -152,7 +152,7 @@ void devHandler(void)
 		error = DoIO( (struct IORequest *) db->scsiReq );
 
 		if (db->scsiReq->io_Error) {
-			DisplayAlert(RECOVERY_ALERT, (CONST_STRPTR)"\x00\x10\x0A[cdtv.device] scsi enquiry failed\x00", 26);
+//			DisplayAlert(RECOVERY_ALERT, (CONST_STRPTR)"\x00\x10\x0A[cdtv.device] scsi enquiry failed\x00", 26);
 			DebugSCSIerror(error, &db->scsiCmd);
 			terminate=TRUE;
 			break;
@@ -162,8 +162,8 @@ void devHandler(void)
 		temp = (db->buffer[0] & 31);
 		if (temp!=5){
 			Dbgf(((CONST_STRPTR)"[cdtv] not an optical drive (found type 0x%02x) - fatal\n",temp));
-			RawDoFmt((CONST_STRPTR)"\x00\x10\x0A[cdtv.device] not an optical drive (found type 0x%02x)\x00", &temp, (void (*)(void))&putChar, alerttext );
-			DisplayAlert(RECOVERY_ALERT, alerttext, 26);
+//			RawDoFmt((CONST_STRPTR)"\x00\x10\x0A[cdtv.device] not an optical drive (found type 0x%02x)\x00", &temp, (void (*)(void))&putChar, alerttext );
+//			DisplayAlert(RECOVERY_ALERT, alerttext, 26);
 			terminate=TRUE;
 			break;
 		}
@@ -315,14 +315,6 @@ void devHandler(void)
 				// First look for commands that don't require drive to be ready
 				switch(nbiostd->io_Command) 
 				{
-					case CDTV_GETDRIVETYPE:
-						nbiostd->io_Actual = DG_CDROM; // Trackdisk device type
-						break; 
-																
-					case CDTV_GETNUMTRACKS:		// Not documented - seems to always return 1 unless drive is empty on real CDTV
-						if (db->driveready) nbiostd->io_Actual = 1; else nbiostd->io_Actual = 0;
-						break;	
-						
 					case CDTV_MUTE:
 						nbiostd->io_Actual = cdtvMute(db,nbiostd,nbiostd->io_Offset,nbiostd->io_Length);
 						break;
@@ -334,55 +326,41 @@ void devHandler(void)
 					case HD_SCSICMD:
 						hdScsiCmd(db,nbiostd);
 						break;
-
-					default:
-						// Following commands requires drive to be ready - error out if drive not ready or TOC not loaded				
-						if (!db->driveready){
-							nbiostd->io_Error = CDERR_NODISK;
-							break;
-						}
-						
-						if (db->discSummary.LastTrack==0xFF){
-							nbiostd->io_Error = CDERR_BADTOC;
-							break;
-						}
-							
 					
-						switch (nbiostd->io_Command) {
-							case CDTV_GETGEOMETRY:		// Not documented, returns nothing on real CDTV  - returning something sane anyway.
-								cdtvGetGeometry(db,nbiostd);
-								break; 
-								
-							case CDTV_INFO:
-								cdtvInfo(db,nbiostd);
-								break;
-								
-							case CDTV_ISROM:
-								cdtvISROM(db,nbiostd);
-								break;
-												
-							case CDTV_STOPPLAY:
-								if (db->cdda_ioreq){
-									// Not valid to call this when requests still open
-									nbiostd->io_Error = CDERR_NOTVALID;
-								} else {
-									driveStopPlayback(db);
-								}
-								break;
-
-							case CDTV_SUBQLSN:
-								cdtvSubQ(db,nbiostd,FALSE);
-								break;
-								
-							case CDTV_SUBQMSF:
-								cdtvSubQ(db,nbiostd,TRUE);
-								break;
-								
-							default: // This should never execute - but catch anyway
-								Dbgf(((CONST_STRPTR) "[cdtvdev] unhandled task non block command 0x%x\n",nbiostd->io_Command));
-								nbiostd->io_Error = CDERR_NOCMD;
-								break;
+					case CDTV_GETGEOMETRY:		// Not documented, returns nothing on real CDTV  - returning something sane anyway.
+						cdtvGetGeometry(db,nbiostd);
+						break; 
+						
+					case CDTV_INFO:
+						cdtvInfo(db,nbiostd);
+						break;
+						
+					case CDTV_ISROM:
+						cdtvISROM(db,nbiostd);
+						break;
+										
+					case CDTV_STOPPLAY:
+						if (db->cdda_ioreq){
+							// Not valid to call this when requests still open
+							nbiostd->io_Error = CDERR_NOTVALID;
+						} else {
+							driveStopPlayback(db);
 						}
+						break;
+
+					case CDTV_SUBQLSN:
+						cdtvSubQ(db,nbiostd,FALSE);
+						break;
+						
+					case CDTV_SUBQMSF:
+						cdtvSubQ(db,nbiostd,TRUE);
+						break;
+						
+					default: // This should never execute - but catch anyway
+						Dbgf(((CONST_STRPTR) "[cdtvdev] unhandled task non block command 0x%x\n",nbiostd->io_Command));
+						nbiostd->io_Error = CDERR_NOCMD;
+						break;
+				
 				}
 	
 				ReplyMsg(&nbiostd->io_Message);
@@ -410,84 +388,67 @@ void devHandler(void)
 						ReplyMsg(&db->blocking_ioReq->io_Message);
 						break;
 
-					default:
-						// Following commands requires drive to be ready				
-						if (!db->driveready){
-							Dbg("- CDERR_NODISK");
-							db->blocking_ioReq->io_Error = CDERR_NODISK;
-							ReplyMsg(&db->blocking_ioReq->io_Message);
-							break;
-						}
+					case CDTV_MOTOR:
+						db->blocking_ioReq->io_Actual = cdtvSetMotor(db,db->blocking_ioReq,db->blocking_ioReq->io_Length);
+						ReplyMsg(&db->blocking_ioReq->io_Message);
+						break;
+
+					case CDTV_PLAYLSN:
+						//if (db->cdda_ioreq) abortCurrentPlay(db); // If play in progress, abort before continuing
+						cdtvPlayLSN(db,db->blocking_ioReq, FALSE);
+						break;
+
+					case CDTV_POKEPLAYLSN:
+						cdtvPlayLSN(db,db->blocking_ioReq, TRUE);
+						ReplyMsg(&db->blocking_ioReq->io_Message); // Reply to the poke
+						break;
+
+					case CDTV_PLAYMSF:
+						//if (db->cdda_ioreq) abortCurrentPlay(db); // If play in progress, abort before continuing
+						cdtvPlayMSF(db,db->blocking_ioReq, FALSE);
+						break;
+
+					case CDTV_POKEPLAYMSF:
+						cdtvPlayMSF(db,db->blocking_ioReq, TRUE);
+						ReplyMsg(&db->blocking_ioReq->io_Message);  // Reply to the poke
+						break;
+
+					case CDTV_PLAYTRACK:
+						//if (db->cdda_ioreq) abortCurrentPlay(db); // If play in progress, abort before continuing
+						cdtvPlayTrack(db,db->blocking_ioReq);
+						break;
+
+					case CDTV_READ:
+						cdtvRead(db,db->blocking_ioReq,TRUE);
+						ReplyMsg(&db->blocking_ioReq->io_Message);
+						break;
+
+					case CDTV_READXL:
+						cdtvReadXL(db,db->blocking_ioReq);
+						ReplyMsg(&db->blocking_ioReq->io_Message);
+						break;
+
+					case CDTV_SEEK:
+						cdtvSeek(db,db->blocking_ioReq);
+						ReplyMsg(&db->blocking_ioReq->io_Message);
+						break;
+
+					case CDTV_TOCLSN:
+						cdtvGetTOC(db,db->blocking_ioReq,FALSE);
+						ReplyMsg(&db->blocking_ioReq->io_Message);
+						break;
+					
+					case CDTV_TOCMSF:
+						cdtvGetTOC(db,db->blocking_ioReq,TRUE);
+						ReplyMsg(&db->blocking_ioReq->io_Message); 
+						break;		
 						
-						if (db->discSummary.LastTrack==0xFF){
-							Dbg("- CDERR_BADTOC");
-							db->blocking_ioReq->io_Error = CDERR_BADTOC;
-							ReplyMsg(&db->blocking_ioReq->io_Message);
-							break;
-						}
-												
-						switch (db->blocking_ioReq->io_Command) {
-							case CDTV_MOTOR:
-								db->blocking_ioReq->io_Actual = cdtvSetMotor(db,db->blocking_ioReq,db->blocking_ioReq->io_Length);
-								ReplyMsg(&db->blocking_ioReq->io_Message);
-								break;
-
-							case CDTV_PLAYLSN:
-								//if (db->cdda_ioreq) abortCurrentPlay(db); // If play in progress, abort before continuing
-								cdtvPlayLSN(db,db->blocking_ioReq, FALSE);
-								break;
-
-							case CDTV_POKEPLAYLSN:
-								cdtvPlayLSN(db,db->blocking_ioReq, TRUE);
-								ReplyMsg(&db->blocking_ioReq->io_Message); // Reply to the poke
-								break;
-
-							case CDTV_PLAYMSF:
-								//if (db->cdda_ioreq) abortCurrentPlay(db); // If play in progress, abort before continuing
-								cdtvPlayMSF(db,db->blocking_ioReq, FALSE);
-								break;
-
-							case CDTV_POKEPLAYMSF:
-								cdtvPlayMSF(db,db->blocking_ioReq, TRUE);
-								ReplyMsg(&db->blocking_ioReq->io_Message);  // Reply to the poke
-								break;
-
-							case CDTV_PLAYTRACK:
-								//if (db->cdda_ioreq) abortCurrentPlay(db); // If play in progress, abort before continuing
-								cdtvPlayTrack(db,db->blocking_ioReq);
-								break;
-
-							case CDTV_READ:
-								cdtvRead(db,db->blocking_ioReq,TRUE);
-								ReplyMsg(&db->blocking_ioReq->io_Message);
-								break;
-
-							case CDTV_READXL:
-								cdtvReadXL(db,db->blocking_ioReq);
-								ReplyMsg(&db->blocking_ioReq->io_Message);
-								break;
-
-							case CDTV_SEEK:
-								cdtvSeek(db,db->blocking_ioReq);
-								ReplyMsg(&db->blocking_ioReq->io_Message);
-								break;
-
-							case CDTV_TOCLSN:
-								cdtvGetTOC(db,db->blocking_ioReq,FALSE);
-								ReplyMsg(&db->blocking_ioReq->io_Message);
-								break;
-							
-							case CDTV_TOCMSF:
-								cdtvGetTOC(db,db->blocking_ioReq,TRUE);
-								ReplyMsg(&db->blocking_ioReq->io_Message); 
-								break;		
-								
-							default: // This should never execute - but catch anyway
-								Dbgf(((CONST_STRPTR) "[cdtv] unhandled task command 0x%lx\n",db->blocking_ioReq->io_Command));
-								db->blocking_ioReq->io_Error = CDERR_NOCMD;
-								ReplyMsg(&db->blocking_ioReq->io_Message); 
-								break;
-						}
+					default: // This should never execute - but catch anyway
+						Dbgf(((CONST_STRPTR) "[cdtv] unhandled task command 0x%lx\n",db->blocking_ioReq->io_Command));
+						db->blocking_ioReq->io_Error = CDERR_NOCMD;
+						ReplyMsg(&db->blocking_ioReq->io_Message); 
+						break;
+						
 				}			
 
 			} // End while GetMsg
@@ -531,14 +492,14 @@ void devHandler(void)
 	if (db->nbdevPort) alib_DeletePort(db->nbdevPort);
 	if (db->devPort) alib_DeletePort(db->devPort);
 
-	if (IntuitionBase) CloseLibrary((struct Library *)IntuitionBase);
+	//if (IntuitionBase) CloseLibrary((struct Library *)IntuitionBase);
 
 	if (DOSBase) CloseLibrary((struct Library *)DOSBase);
 
 	//Reply to device handler if termination was requested
 	if (tm->command == CDTV_TERM){
 		Forbid();
-		ReplyMsg(&db->dev_ioReq->io_Message);
+		ReplyMsg(&tm->msg); //Reply to device now shutdown complete
 	}
 
 	Dbg("task terminated"); 
