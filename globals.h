@@ -23,11 +23,9 @@
 #include <devices/trackdisk.h>
 #include <devices/timer.h>
 #include <dos/dostags.h>
-//#include <intuition/intuition.h>
 #include <utility/tagitem.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
-//#include <proto/intuition.h>
 
 #include <clib/intuition_protos.h>
 #include <string.h>
@@ -48,6 +46,7 @@
 
 #define CDTV_STARTTASK  0x7ff0
 #define CDTV_TERM       0x7ff1
+#define CDTV_SCSIINIT   0x7ff2
 
 
 // Check for diskchange every x seconds
@@ -68,8 +67,9 @@ struct devBase {
     struct DOSBase      *DOSBase;           // pointer to DOS
     struct Task         *handlerTask;       // pointer to handler task 
     BOOL                initComplete;       // handler task ready flag
+    BOOL                scsiInitDone;       // Attempt has been made to open scsi device
 
-    struct MsgPort      *taskPort;          // Port used to syncronise device state 
+    struct MsgPort      *taskPort;         // Port used to syncronise device startup / shutdown 
     struct MsgPort 		*devPort;           // Blocking request message port
 	struct MsgPort 		*nbdevPort;         // Non-blocking request message port
     struct IOStdReq 	*blocking_ioReq;    // Current blocking device request
@@ -155,6 +155,7 @@ USHORT cdtvReadBlocks(struct devBase * db, ULONG startblock, USHORT blockstofetc
 void cdtvReadXL(struct devBase * db,struct IOStdReq *readReq);
 
 // hardware.c
+BOOL openSCSIdevice(struct devBase * db);
 void driveInitSCSIstructure(struct devBase * db);
 void driveInitSCSIstructure_nb(struct devBase * db);
 BOOL isUnitReady(struct devBase * db);

@@ -5,6 +5,70 @@
 #include "globals.h"
 #include "hardware.h"
 
+BOOL openSCSIdevice(struct devBase * db) {
+	// Opens the SCSI device and initialises the SCSI and Timer structures.
+	// Called on the first open
+
+	db->scsiInitDone=TRUE; //Prevent being called a second time
+
+	struct ExecBase *SysBase = db->SysBase; // Restore Exec
+	BOOL success=TRUE;
+	BYTE error,temp;
+
+	while(TRUE) { // Loop used to break out of on error during initialisation
+
+		if ( OpenDevice( (CONST_STRPTR)"scsi.device", 6, (struct IORequest*) db->scsiReq, 0 ) ) {
+			if ( OpenDevice( (CONST_STRPTR)"2nd.scsi.device", 6, (struct IORequest*) db->scsiReq, 0 ) ) {
+				db->scsiReq->io_Device = NULL;
+				Dbg("scsi open failed");
+				success=FALSE;
+				break;
+			}
+		}
+
+		//clone the SCSI structures	
+		db->nbscsiReq=db->scsiReq;
+		db->rdyscsiReq=db->scsiReq;
+		
+		// Set up SCSI command structure
+		driveInitSCSIstructure(db); 
+
+		// Do a SCSI Unit Inquiry to confirm it's an optical drive
+		UBYTE SD_Inquiry[]	= { 0x12,0,0,0,254,0 };
+		db->scsiCmd.scsi_Command=(UBYTE *)SD_Inquiry;		             
+		db->scsiCmd.scsi_CmdLength = sizeof(SD_Inquiry);
+	
+		error = DoIO( (struct IORequest *) db->scsiReq );
+
+		if (db->scsiReq->io_Error) {
+			DebugSCSIerror(error, &db->scsiCmd);
+			success=FALSE;
+			break;
+		}		
+
+		// check we have an optical drive connected
+		temp = (db->buffer[0] & 31);
+		if (temp!=5){
+			Dbgf(((CONST_STRPTR)"[cdtv] not an optical drive (found type 0x%02x) - fatal\n",temp));
+			success=FALSE;
+			break;
+		}
+							
+		// We have the drive name and type in the buffer now
+		// here is where any drive specific stuff needs to be set up
+		
+		cdtvMute(db, NULL, 0x7FFF, 1); //Reset volume to max			
+		isUnitReady(db); // Initial check if disc present
+		
+		Dbg("scsi open success");
+		break; // Initialisation completed successfully
+
+
+	} // end initilisation while loop
+
+	return(success);
+}
+
 void driveInitSCSIstructure(struct devBase * db){
 	// Sets up SCSI command structure for db->scsiReq 
 

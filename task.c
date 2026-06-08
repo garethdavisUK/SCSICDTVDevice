@@ -14,13 +14,8 @@ void devHandler(void)
 	struct timerequest *timerReq; 
 	struct taskMessage *tm;
 
-	BYTE error,temp;
 	BOOL terminate=FALSE;
-
-	//unsigned char alerttext[255];
-
-	// For RawDoFmt
-	//STATIC CONST ULONG putChar[] = { 0x16c04e75 };
+	BYTE error;
 
 	ULONG signal, cmdSig, nbcmdSig, timerSig, taskSig;
 		
@@ -33,14 +28,11 @@ void devHandler(void)
 	struct Task *task = FindTask(NULL);
 	struct devBase *db = (struct devBase *)task->tc_UserData;
 
-	// Now we have devbase, we can restore SysBase
+	// Now we have devbase, we can restore SysBase (even though it's probably still at 0x4 as usual)
 	SysBase = db->SysBase; 
 
 	struct DOSBase * DOSBase = (struct DOSBase *)OpenLibrary((STRPTR)"dos.library", 34);
 	db->DOSBase = DOSBase;
-
-	//struct Library * IntuitionBase = (struct Library *) OpenLibrary((CONST_STRPTR)"intuition.library", 34);
-	//Only used here
 
 	db->devPort = alib_CreatePort(NULL, 0); //port for standard commands
 	if (db->devPort == NULL) return;
@@ -91,96 +83,31 @@ void devHandler(void)
 		db->rdysense = (UBYTE *)AllocMem(SENSESIZE, MEMF_PUBLIC);
 		if (!db->rdysense) { terminate=TRUE; break;}
 		
-		// Init SCSI device 
+		// Init device ports 
 		db->scsiPort = alib_CreatePort(NULL, 0);
 		if (!db->scsiPort) 	{ terminate=TRUE; break;}
 		
 		db->scsiReq = alib_CreateStdIO(db->scsiPort);
 		if (!db->scsiReq) { terminate=TRUE; break;}
 
-		if ( OpenDevice( (CONST_STRPTR)"scsi.device", 6, (struct IORequest*) db->scsiReq, 0 ) ) {
-			if ( OpenDevice( (CONST_STRPTR)"2nd.scsi.device", 6, (struct IORequest*) db->scsiReq, 0 ) ) {
-				db->scsiReq->io_Device = NULL;
-				Dbg("scsi open failed");
-//				DisplayAlert(RECOVERY_ALERT, (STRPTR)"\x00\x10\x0A[cdtv.device] Unable to open scsi.device or 2nd.scsi.device unit 6\x00", 26);
-				terminate=TRUE;
-				break;
-			}
-		}
+		//SCSI device opened when required
 
-		//clone the SCSI structures	
-		db->nbscsiReq=db->scsiReq;
-		db->rdyscsiReq=db->scsiReq;
-		
-		//Init Timer device 
 		timerPort = alib_CreatePort(NULL, 0);
 		if (!timerPort) { terminate=TRUE; break;}
 		
 		timerReq = (struct timerequest *)alib_CreateExtIO( timerPort, sizeof( struct timerequest ) );
 		if (!timerReq) { terminate=TRUE; break;}
 		
+		//Init Timer device 		
 		if ( OpenDevice( (CONST_STRPTR)"timer.device", UNIT_VBLANK, (struct IORequest*) timerReq, 0 ) ) 
-			{ terminate=TRUE; break;}
+			{ terminate=TRUE; break;}	
 		
 		/* no longer used
 		// Clone timer for adhoc use
 		// db->adhoc_timerReq=timerReq;
 		*/
 
-		// Set up SCSI command structure
-		driveInitSCSIstructure(db); 
 
-		// Do a SCSI Unit Inquiry to confirm it's an optical drive
-		UBYTE SD_Inquiry[]	= { 0x12,0,0,0,254,0 };
-
-		db->scsiReq->io_Length  = sizeof(struct SCSICmd);
-		db->scsiReq->io_Data    = (APTR)&db->scsiCmd;
-		db->scsiReq->io_Command = HD_SCSICMD;
-		db->scsiReq->io_Flags	= 0;
-
-		db->scsiCmd.scsi_Command=(UBYTE *)SD_Inquiry;		             
-		db->scsiCmd.scsi_CmdLength = sizeof(SD_Inquiry);
-
-		db->scsiCmd.scsi_Data = (UWORD *)db->buffer;			  
-		db->scsiCmd.scsi_Length = BUFSIZE;					      
-		db->scsiCmd.scsi_Flags = SCSIF_AUTOSENSE|SCSIF_READ;  
-														
-		db->scsiCmd.scsi_SenseData =(UBYTE *)db->sense;			     
-		db->scsiCmd.scsi_SenseLength = SENSESIZE;			     
-		db->scsiCmd.scsi_SenseActual = 0;
-	
-		error = DoIO( (struct IORequest *) db->scsiReq );
-
-		if (db->scsiReq->io_Error) {
-//			DisplayAlert(RECOVERY_ALERT, (CONST_STRPTR)"\x00\x10\x0A[cdtv.device] scsi enquiry failed\x00", 26);
-			DebugSCSIerror(error, &db->scsiCmd);
-			terminate=TRUE;
-			break;
-		}		
-
-		// check we have an optical drive connected
-		temp = (db->buffer[0] & 31);
-		if (temp!=5){
-			Dbgf(((CONST_STRPTR)"[cdtv] not an optical drive (found type 0x%02x) - fatal\n",temp));
-//			RawDoFmt((CONST_STRPTR)"\x00\x10\x0A[cdtv.device] not an optical drive (found type 0x%02x)\x00", &temp, (void (*)(void))&putChar, alerttext );
-//			DisplayAlert(RECOVERY_ALERT, alerttext, 26);
-			terminate=TRUE;
-			break;
-		}
-							
-		// We have the drive name and type in the buffer now
-		// here is where any drive specific stuff needs to be set up
-		
-		cdtvMute(db, NULL, 0x7FFF, 1); //Reset volume to max			
-		isUnitReady(db); // Initial check if disc present
-		
-		// Set up INTERVAL second diskchange event timer	
-		timerReq->tr_node.io_Command 	= TR_ADDREQUEST;
-		timerReq->tr_time.tv_secs		= DISKCHANGE_CHECK_INTERVAL;
-		timerReq->tr_time.tv_micro		= 0;
-
-		SendIO ((struct IORequest*) timerReq);
-		
 		//Set devBase defaults
 		//cdda globals
 		db->immediate = TRUE;
@@ -192,10 +119,11 @@ void devHandler(void)
 		db->lasterror = FALSE;
 		db->discchanges = 0;
 		db->changeInt = NULL;
+		db->scsiInitDone = FALSE;
 
-		break; // Initialisation completed successfully
 
-	} // end initilisation while loop
+		break; // End of initialisation loop - will only execute once
+	}
 
 	db->initComplete = TRUE;
 
@@ -204,6 +132,9 @@ void devHandler(void)
 		WaitPort(db->taskPort);
 
 	ReplyMsg(&tm->msg);
+
+	// SCSI device not opened at this point, wait for second message
+	// Diskchange timer won't be set until SCSI init has completed
 
 	while (!terminate) 
 	{
@@ -315,6 +246,18 @@ void devHandler(void)
 				// First look for commands that don't require drive to be ready
 				switch(nbiostd->io_Command) 
 				{
+					case CDTV_SCSIINIT:
+						if (openSCSIdevice(db)) {
+							// Set up INTERVAL second diskchange event timer now drive is available	
+							timerReq->tr_node.io_Command 	= TR_ADDREQUEST;
+							timerReq->tr_time.tv_secs		= DISKCHANGE_CHECK_INTERVAL;
+							timerReq->tr_time.tv_micro		= 0;
+
+							SendIO ((struct IORequest*) timerReq);
+						}
+
+						break;
+
 					case CDTV_MUTE:
 						nbiostd->io_Actual = cdtvMute(db,nbiostd,nbiostd->io_Offset,nbiostd->io_Length);
 						break;
@@ -363,8 +306,9 @@ void devHandler(void)
 				
 				}
 	
-				ReplyMsg(&nbiostd->io_Message);
-
+				if (nbiostd->io_Command != CDTV_SCSIINIT)
+					ReplyMsg(&nbiostd->io_Message); 
+					else alib_DeleteStdIO(nbiostd); // We only use the message, delete the IORequest to tidy up
 			} // End while GetMsg
 
 		} // End if no blocking command signal

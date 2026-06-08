@@ -151,6 +151,8 @@ static BPTR __attribute__((used)) expunge(struct devBase *db asm("a6"))
 static void __attribute__((used)) open(struct devBase *db asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
     Dbg("dev_open()");
+
+    struct ExecBase *SysBase = db->SysBase; // Restore Exec
     
     //Set default response to error in case we return early
     ioreq->io_Error = IOERR_OPENFAIL;
@@ -160,6 +162,23 @@ static void __attribute__((used)) open(struct devBase *db asm("a6"), struct IORe
         Dbg("open() task init not complete");
         return; //Device init failed, can't proceed, shouldn't ever happen
     }
+
+    if(!db->scsiInitDone) {
+        // Queue a request to initialise the SCSI device
+        struct IOStdReq * startMessage = alib_CreateStdIO(db->nbdevPort);
+        startMessage->io_Message.mn_ReplyPort = NULL;
+        startMessage->io_Message.mn_Node.ln_Type = NT_MESSAGE;
+        startMessage->io_Message.mn_Length = sizeof(struct IOStdReq);
+        startMessage->io_Command = CDTV_SCSIINIT;
+        PutMsg(db->nbdevPort, &startMessage->io_Message);
+
+        //We can't wait for a reply during an OpenDevice() as in a forbidden state
+        //The handler task will alib_DeleteStdIO after processing the message
+   
+        Dbg("sent CDTV_SCSIINIT");
+    }
+
+
     if (unitnum != 0) {
         Dbg("open() invalid unitnum");
         return; //Only 1 unit
@@ -402,42 +421,31 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
 			if (db->cdda_ioreq) thisReq->io_Actual =  thisReq->io_Actual | QSF_AUDIO;
 			ReplyMsg(&thisReq->io_Message);
 	        break;
-
-	    //implemented in some way
-        //Commands that do nothing - defined as NOP in developer guide
-        case CDTV_FLUSH:
-		case CDTV_UPDATE:
-		case CDTV_CLEAR:
-		case CDTV_STOP:
-		case CDTV_START:
-		case CDTV_REMOVE:
-            thisReq->io_Flags &= ~IOF_QUICK;
-			ReplyMsg(&thisReq->io_Message);
-			break;    
-
-		//Immediate (non blocking) commands)
+			 
+		//Immediate (non blocking) commands for queue that require disc present
 		case CDTV_GETGEOMETRY: 			
-		case CDTV_INFO: 
 	    case CDTV_ISROM:
-        case CDTV_MUTE:        
 		case CDTV_PAUSE:
-        case CDTV_STOPPLAY:
 		case CDTV_SUBQLSN:
 		case CDTV_SUBQMSF:
             thisReq->io_Flags &= ~IOF_QUICK;
             if (!db->driveready ) { 
-                Dbg("CDERR_NODISK");
+                Dbg("- CDERR_NODISK");
                 thisReq->io_Error = CDERR_NODISK;
                 ReplyMsg(&thisReq->io_Message);
             } else PutMsg(db->nbdevPort, &thisReq->io_Message);
             break;
 
+		//Immediate (non blocking) commands for queue that don't require disc present
+        case CDTV_MUTE:        
+        case CDTV_STOPPLAY:
+		case CDTV_INFO: 
         case HD_SCSICMD: // Treating as non blocking as we don't know what's been requested
             thisReq->io_Flags &= ~IOF_QUICK;
 			PutMsg(db->nbdevPort, &thisReq->io_Message);
             break;
 
-		//Blocking commands
+		//Blocking commands for queue that require disc present
 		case CDTV_MOTOR:
         case CDTV_OPTIONS:
      	case CDTV_PLAYLSN:
@@ -452,27 +460,26 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
         case CDTV_TOCMSF:
 			thisReq->io_Flags &= ~IOF_QUICK;
             if (!db->driveready ) { 
-                Dbg("CDERR_NODISK");
+                Dbg("- CDERR_NODISK");
                 thisReq->io_Error = CDERR_NODISK;
                 ReplyMsg(&thisReq->io_Message);
             } else PutMsg(db->devPort, &thisReq->io_Message);
             break;
-  
+            
+        // Commands that can be serviced without queuing
         case CDTV_GETDRIVETYPE:
-            //Can be serviced without queuing
             thisReq->io_Flags &= ~IOF_QUICK;
             thisReq->io_Actual = DG_CDROM; // Trackdisk device type
             PutMsg(db->devPort, &thisReq->io_Message);
             break; 
                                                     
-        case CDTV_GETNUMTRACKS:		// Not documented - seems to always return 1 unless drive is empty on real CDTV
-            //Can be serviced without queuing
+        case CDTV_GETNUMTRACKS:		
+            // Not documented - seems to always return 1 unless drive is empty on real CDTV
             thisReq->io_Flags &= ~IOF_QUICK;
             if (db->driveready) thisReq->io_Actual = 1; else thisReq->io_Actual = 0;
             PutMsg(db->devPort, &thisReq->io_Message);
             break;	
-						
-
+		
 		//Not yet implemented audio commands
 		//return OK as should be harmless (just no audio changes)
         case CDTV_FADE:
@@ -482,7 +489,7 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
         case CDTV_PLAYSEGSMSF:
         case CDTV_POKESEGLSN:
         case CDTV_POKESEGMSF:
-            Dbg("CDTV_POKESEGMSF");
+            Dbg(" - not implemented");
             thisReq->io_Flags &= ~IOF_QUICK;
 			ReplyMsg(&thisReq->io_Message);
 	        break;        
@@ -490,11 +497,13 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
 		//Not yet implemented non-audio commands
 		//returning NOCMD as the calling code would be expecting them to do something		
         case CDTV_FRAMECALL:
+        case CDTV_FRAMECOUNT:
         case CDTV_RESET:
 		//Potentially valid, but undocumented commands
 		//Return NOCMD error until a way of implementing them is found
         case CDTV_DIRECT:
         case CDTV_ERRORINFO:
+            Dbg(" - not implemented");
             thisReq->io_Flags &= ~IOF_QUICK;
 			ReplyMsg(&thisReq->io_Message);
 			break;       
@@ -503,15 +512,27 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
 		case CDTV_PROTSTATUS:
 		case CDTV_FORMAT:
         case CDTV_WRITE:
-            Dbg("CDERR_WRITEPROT");
+            Dbg(" - CDERR_WRITEPROT");
             thisReq->io_Flags &= ~IOF_QUICK;
             thisReq->io_Error = CDERR_WRITEPROT;
 			ReplyMsg(&thisReq->io_Message);
 			break;
+
+        //Commands that do nothing - defined as NOP in developer guide
+        case CDTV_FLUSH:
+		case CDTV_UPDATE:
+		case CDTV_CLEAR:
+		case CDTV_STOP:
+		case CDTV_START:
+		case CDTV_REMOVE:
+            thisReq->io_Flags &= ~IOF_QUICK;
+			ReplyMsg(&thisReq->io_Message);
+			break;  
         
         //Anything else isn't valid, so should error
         case CMD_INVALID:
         default:
+            Dbg("- unhandled command");
             thisReq->io_Flags &= ~IOF_QUICK;
             thisReq->io_Error = CDERR_NOCMD;
             ReplyMsg(&thisReq->io_Message);
