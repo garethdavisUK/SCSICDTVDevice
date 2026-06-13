@@ -48,7 +48,7 @@ __attribute__((used,no_reorder)) static const struct Resident romTag = {
 // Called as Exec initialises devices
 struct Library * init(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct devBase *db asm("d0"))
 {	
-    Dbg("dev_init() version " XSTR(DEVICE_ID_STRING));
+    Dbg("dev_init() build "__DATE__ " " __TIME__);
 
     struct taskMessage tm;
 
