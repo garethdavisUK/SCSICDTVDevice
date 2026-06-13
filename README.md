@@ -5,11 +5,9 @@ This is a ground up rewrite of the cdtv.device driver present in the extended RO
 This translates the device calls into SCSI 2 compatible CD-ROM commands and sends them to ID 6 on the scsi.device. This allows a third party SCSI CD-ROM drive to be used in place of the internal drive, which are unobtainium once they fail. You will need a CDTV SCSI interface board to connect the drive to, but there are reproductions of these available.
 
 ## Status of the project
-This is best described as a bunch of loosly held together hacks that can successfully boot fairly simple titles like the CDPD workbench discs. This is nowhere near production quality code yet, this repo is here primarily for storage rather than sharing my work. There are no releases as yet.
+This is best described as a bunch of loosly held together hacks that can successfully boot fairly simple discs like the CDPD collections. A number of more complex titles don't get any further than booting to a black screen.
 
-The device is currently doing something making cdstrap unhappy, causing it not to open the trademark screen once booting. If a CDTV title doesn't open its own screen during boot, you'll stay on a black screen. Sim City opens a new screen, Defender of the Crown does not, and Lemmings only opens a screen under on KS1.3.
-
-For this reason I'd advise people not to go building and burning this into ROMs right now, and is why I'm not including a binary module.
+This is nowhere near production quality code yet, this repo is here primarily for storage rather than sharing my work. There are no releases as yet. For this reason I'd advise people not to go building and burning this into ROMs right now, and is why I'm not including a binary module.
 
 ### What does work (maybe)
 From a driver level here is what I think is currently working, what this translates to in application support is left as an exercise for the reader
@@ -21,7 +19,6 @@ From a driver level here is what I think is currently working, what this transla
 I've also implemented HD_SCSICMD which allows a SCSI direct command to be sent to the drive if something not covered in the CDTV interface is required, like fetching subcode channels or setting drive speed.
 
 ### What doesn't work
-* As already mentioned, cdstrap does not open the TM screen when booting from CD.
 * CDTV_FADE is not implemented, so audio transitions sound off.
 * CDTV_READXL command
 * Any commands that depend on the frame interrupt like CDTV_FRAMECALL
