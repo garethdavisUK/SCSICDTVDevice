@@ -4,3 +4,5 @@ Thumbs.db
 .DS_Store
 devicetests
 scsitests
+scsiconfig/clearbookmark
+scsiconfig/setbookmark

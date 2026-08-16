@@ -23,12 +23,13 @@ int driveSetImmediateMode(struct devBase * db, BOOL mode){
 
 	if (error){
 		// SCSI command execution error
-		Dbg("immediate get fail");
-		return(error);
+		Dbgf(((CONST_STRPTR) "[cdtv] read page 0E failed error=%d\n",error));
+		DebugSCSIerror(error, &db->nbscsiCmd);
+		return 0;
 	}
 		
-	if (mode) db->nbbuffer[6] = 4;	//set immediate and stop on track crossing off.
-		else db->nbbuffer[6] = 0;	//clear immediate and stop on track crossing off.
+	if (mode) db->nbbuffer[6] = 4;	//set immediate reply and don't stop on track crossing.
+		else db->nbbuffer[6] = 2;	//clear immediate reply and stop on track crossing.
 		
 	// Write back modified table
 	db->nbscsiCmd.scsi_Command=(UBYTE *)SD_SelectPage0Eh;		
@@ -41,9 +42,12 @@ int driveSetImmediateMode(struct devBase * db, BOOL mode){
 
 	if (error){
 		// SCSI command execution error
-		Dbg("immediate set fail");	
-		return (error);
+		Dbgf(((CONST_STRPTR) "[cdtv] set page 0E failed error=%d\n",error));
+		DebugSCSIerror(error, &db->nbscsiCmd);
+		return 0;
 	}
+
+	db->immediate = mode;
 
 	return (0);
 }
@@ -55,7 +59,8 @@ void cdtvPlayTrack(struct devBase * db, struct IOStdReq *iostd){
 
 	struct ExecBase *SysBase = db->SysBase; // Restore Exec
 
-	if (!db->immediate) error=driveSetImmediateMode(db,TRUE);
+	if (!db->immediate) driveSetImmediateMode(db,TRUE);
+
 
 	SD_PlayTrackIndex[4] = iostd->io_Offset; // Start track
 	SD_PlayTrackIndex[5] = (iostd->io_Offset >> 16); // index
@@ -81,7 +86,8 @@ void cdtvPlayTrack(struct devBase * db, struct IOStdReq *iostd){
 
 	Dbgf(((CONST_STRPTR) "[cdtv] playtrack offset %ld length %ld\n",iostd->io_Offset,iostd->io_Length));
 
-	error=DoIO( (struct IORequest *) db->scsiReq );			//Drive in immediate mode, so request returns once play started successfully 
+	error=DoIO( (struct IORequest *) db->scsiReq );			//Drive should be in immediate mode, so request returns once play started successfully 
+
 	if (error){
 		// SCSI command execution error
 		Dbgf(((CONST_STRPTR) "[cdtv] play failed %d\n",error));
@@ -89,8 +95,7 @@ void cdtvPlayTrack(struct devBase * db, struct IOStdReq *iostd){
 		iostd->io_Error = CDERR_ABORTED;
 	}
 
-	// Store the ioReq pointer for later, and start cdda polling
-	db->playcdda_ioReq = iostd;
+	// Start cdda polling
 	db->cdda_ioreq=TRUE;
 	db->abortPending = FALSE;
 
@@ -98,104 +103,71 @@ void cdtvPlayTrack(struct devBase * db, struct IOStdReq *iostd){
 	
 }
 
-void cdtvPlayLSN(struct devBase * db, struct IOStdReq *iostd, BOOL poke){
+BOOL drivePlay(struct devBase * db, ULONG offset, ULONG length, BOOL lsn, BOOL poke){
 
-	UBYTE SD_PlayLSN[]= { 0xA5,0,0,0,0,0,0,0,0,0,0,0}; 	
-	int error;
-	
-	struct ExecBase *SysBase = db->SysBase; // Restore Exec
+	UBYTE SD_Play[]={ 0,0,0,0,0,0,0,0,0,0,0,0};
 
-	SD_PlayLSN[2] = (iostd->io_Offset & 0xff000000) >> 24;
-	SD_PlayLSN[3] = (iostd->io_Offset & 0x00ff0000) >> 16;
-	SD_PlayLSN[4] = (iostd->io_Offset & 0x0000ff00) >> 8;
-	SD_PlayLSN[5] = (iostd->io_Offset & 0x000000ff);
-
-	SD_PlayLSN[6] = (iostd->io_Length & 0xff000000) >> 24;
-	SD_PlayLSN[7] = (iostd->io_Length & 0x00ff0000) >> 16;
-	SD_PlayLSN[8] = (iostd->io_Length & 0x0000ff00) >> 8;
-	SD_PlayLSN[9] = (iostd->io_Length & 0x000000ff);
-
-	error=driveSetImmediateMode(db,TRUE);
-
-	driveInitSCSIstructure(db); 
-	db->scsiCmd.scsi_Command=(UBYTE *)SD_PlayLSN;		// command to issue             
-	db->scsiCmd.scsi_CmdLength = sizeof(SD_PlayLSN);	// length of the command        
-
-    Dbgf(((CONST_STRPTR) "[cdtv] playtrack %d sent\n",iostd->io_Offset));
-
-	error=DoIO( (struct IORequest *) db->scsiReq );			//Drive in immediate mode, so request returns once play started successfully 
-	if (error){
-		// SCSI command execution error
-		Dbg("play LSN failed");
-		DebugSCSIerror(error, &db->scsiCmd);
-		iostd->io_Error = CDERR_ABORTED;
-	}
-
-	if (!poke) {
-		// If not poking an existing play - Store the ioReq pointer for later, and start cdda polling
-		db->playcdda_ioReq = iostd;
-		db->cdda_ioreq=TRUE;
-		db->abortPending = FALSE;
-	}
-
-	// Result monitored in unit ready polling loop
-	
-}
-
-void cdtvPlayMSF(struct devBase * db, struct IOStdReq *iostd, BOOL poke){
-
-	UBYTE SD_PlayMSF[]= { 0x47,0,0,0,0,0,0,0,0,0}; 	
 	int error;
 
 	struct ExecBase *SysBase = db->SysBase; // Restore Exec
 
-	SD_PlayMSF[3] = (iostd->io_Offset & 0x00ff0000) >> 16;
-	SD_PlayMSF[4] = (iostd->io_Offset & 0x0000ff00) >> 8;
-	SD_PlayMSF[5] = (iostd->io_Offset & 0x000000ff);
+	if (!db->immediate) driveSetImmediateMode(db,TRUE);
 
-	// Drive wants an end position, not length so need to convert
+	if (lsn){
+		// Request is LSN
+		Dbgf(((CONST_STRPTR) "[cdtv] start 0x%lx length 0x%lx\n",offset,length));
+		SD_Play[0]= 0xA5; 	
+
+		SD_Play[2] = (offset & 0xff000000) >> 24;
+		SD_Play[3] = (offset & 0x00ff0000) >> 16;
+		SD_Play[4] = (offset & 0x0000ff00) >> 8;
+		SD_Play[5] = (offset & 0x000000ff);
+
+		SD_Play[6] = (length & 0xff000000) >> 24;
+		SD_Play[7] = (length & 0x00ff0000) >> 16;
+		SD_Play[8] = (length & 0x0000ff00) >> 8;
+		SD_Play[9] = (length & 0x000000ff);
 	
-	SD_PlayMSF[8] = (iostd->io_Offset & 0x000000ff) + (iostd->io_Length & 0x000000ff);
-	if (SD_PlayMSF[8] > 74) { // carry
-		SD_PlayMSF[8]-=75;
-		SD_PlayMSF[7]=1;
+	} else {
+		// Request is MSF
+		SD_Play[0]=  0x47; 	
+		SD_Play[3] = (offset & 0x00ff0000) >> 16;
+		SD_Play[4] = (offset & 0x0000ff00) >> 8;
+		SD_Play[5] = (offset & 0x000000ff);
+
+		SD_Play[6] = (length & 0x00ff0000) >> 16;
+		SD_Play[7] = (length & 0x0000ff00) >> 8;
+		SD_Play[8] = (length & 0x000000ff);
+
+		Dbgf(((CONST_STRPTR) "[cdtv] %02ld:%02ld.%02ld to %02ld:%02ld.%02ld\n",(ULONG)SD_Play[3],(ULONG)SD_Play[4],(ULONG)SD_Play[5],(ULONG)SD_Play[6],(ULONG)SD_Play[7],(ULONG)SD_Play[8]));
 	}
-	
-	SD_PlayMSF[7]+=(iostd->io_Offset & 0x0000ff00) >> 8;
-	SD_PlayMSF[7]+=(iostd->io_Length & 0x0000ff00) >> 8;
-	if (SD_PlayMSF[7]>59){ // carry
-		SD_PlayMSF[7]-=60;
-		SD_PlayMSF[6]=1;
-	}
-	SD_PlayMSF[6]+=SD_PlayMSF[3] = (iostd->io_Offset & 0x00ff0000) >> 16;
-	SD_PlayMSF[6]+=SD_PlayMSF[3] = (iostd->io_Length & 0x00ff0000) >> 16;
-	
-	error=driveSetImmediateMode(db,TRUE);
 
 	driveInitSCSIstructure(db); 
-	db->scsiCmd.scsi_Command=(UBYTE *)SD_PlayMSF;		// command to issue             
-	db->scsiCmd.scsi_CmdLength = sizeof(SD_PlayMSF);	// length of the command        
+	db->scsiCmd.scsi_Command=(UBYTE *)SD_Play;		// command to issue 
+	
+	// length of the command  
+	if (lsn) db->scsiCmd.scsi_CmdLength = 12;       
+		else db->scsiCmd.scsi_CmdLength = 10;
 
+    Dbg("sending play");
 
-    Dbgf(((CONST_STRPTR) "[cdtv] playtrack %d sent\n",iostd->io_Offset));
+	error=DoIO( (struct IORequest *) db->scsiReq );	//Drive should be in immediate mode, so request returns once play started successfully 
 
-	error=DoIO( (struct IORequest *) db->scsiReq );			//Drive in immediate mode, so request returns once play started successfully 
 	if (error){
 		// SCSI command execution error
 		Dbg("play failed");
 		DebugSCSIerror(error, &db->scsiCmd);
-		iostd->io_Error = CDERR_ABORTED;
+		return FALSE;
 	}
 
 	if (!poke) {
-		// If not poking an existing play - Store the ioReq pointer for later, and start cdda polling
-		db->playcdda_ioReq = iostd;
+		// If not poking an existing play start cdda polling
 		db->cdda_ioreq=TRUE;
 		db->abortPending = FALSE;
 	}
 			
 	// Result monitored in unit ready polling loop
-	
+	return TRUE;
 }
 
 void cdtvPause(struct devBase * db, struct IOStdReq *iostd, BOOL pause){

@@ -27,7 +27,6 @@
 #include <proto/exec.h>
 #include <proto/dos.h>
 
-#include <clib/intuition_protos.h>
 #include <string.h>
 
 #define STR(s) #s          
@@ -48,6 +47,9 @@
 #define CDTV_TERM       0x7ff1
 #define CDTV_SCSIINIT   0x7ff2
 
+//Bookmark ID used to store device details 
+#define BM_MFGID 22616 
+#define BM_PRODID 254
 
 // Check for diskchange every x seconds
 #define DISKCHANGE_CHECK_INTERVAL 5
@@ -114,6 +116,7 @@ struct devBase {
     USHORT discblocksize;
     ULONG discblocks;
     ULONG framerate;
+    ULONG lastblock;
 };
 
 
@@ -137,8 +140,9 @@ void alib_DeleteStdIO(struct IOStdReq *ior);
 // cdda.c
 int driveSetImmediateMode(struct devBase * db,BOOL mode);
 void cdtvPlayTrack(struct devBase * db, struct IOStdReq *iostd);
-void cdtvPlayLSN(struct devBase * db, struct IOStdReq *iostd, BOOL poke);
-void cdtvPlayMSF(struct devBase * db, struct IOStdReq *iostd, BOOL poke);
+BOOL drivePlay(struct devBase * db, ULONG offset, ULONG length, BOOL lsn, BOOL poke);
+//void cdtvPlayLSN(struct devBase * db, struct IOStdReq *iostd, BOOL poke);
+//void cdtvPlayMSF(struct devBase * db, struct IOStdReq *iostd, BOOL poke);
 void cdtvPause(struct devBase * db, struct IOStdReq *iostd,  BOOL pause);
 void driveStopPlayback(struct devBase * db);
 int cdtvMute(struct devBase * db, struct IOStdReq *iostd, int value, int mode);
@@ -150,8 +154,8 @@ void cdtvGetTOC(struct devBase * db,struct IOStdReq *iostd, BOOL msfmode);
 void cdtvSeek(struct devBase * db,struct IOStdReq *iostd);
 void cdtvSubQ(struct devBase * db,struct IOStdReq *iostd, BOOL msfmode);
 int driveGetQSubChannel(struct devBase * db,BOOL msfmode);
-void cdtvRead(struct devBase * db,struct IOStdReq *readReq, BOOL allowAbort);
-USHORT cdtvReadBlocks(struct devBase * db, ULONG startblock, USHORT blockstofetch, APTR readbufptr);
+ULONG driveRead(struct devBase * db, ULONG discaddress, ULONG lengthinbytes, APTR iostdbufptr, BOOL allowAbort);
+USHORT driveReadBlocks(struct devBase * db, ULONG startblock, USHORT blockstofetch, APTR readbufptr);
 void cdtvReadXL(struct devBase * db,struct IOStdReq *readReq);
 
 // hardware.c
@@ -164,7 +168,7 @@ BOOL cdtvSetMotor(struct devBase * db,struct IOStdReq *iostd,BOOL start);
 void cdtvInfo(struct devBase * db,struct IOStdReq *iostd);
 void cdtvOptions(struct devBase * db,struct IOStdReq *iostd);
 void hdScsiCmd(struct devBase * db,struct IOStdReq *iostd);
-void setDriveSingleSpeed(struct devBase * db);
+void setDriveSingleSpeed(struct devBase * db, BOOL enable);
 void DebugSCSIerror(BYTE error, struct SCSICmd *scsiCmd);
 
 // task.c

@@ -48,7 +48,7 @@ __attribute__((used,no_reorder)) static const struct Resident romTag = {
 // Called as Exec initialises devices
 struct Library * init(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct devBase *db asm("d0"))
 {	
-    Dbg("dev_init() build "__DATE__ " " __TIME__);
+    Dbg("dev_init() " DEVICE_ID_STRING);
 
     struct taskMessage tm;
 
@@ -72,7 +72,7 @@ struct Library * init(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"
     PutMsg(db->taskPort, &tm.msg);
 
     // Create the handler task, passing devBase in the userdata field
-    db->handlerTask=alib_CreateTask("cdtv.device",0,devHandler,4096,db,SysBase);
+    db->handlerTask=alib_CreateTask("cdtv.device",10,devHandler,4096,db,SysBase);
 
     if (db->handlerTask == NULL) {
         Dbg("init CreateTask fail");
@@ -532,11 +532,10 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
         //Anything else isn't valid, so should error
         case CMD_INVALID:
         default:
-            Dbg("- unhandled command");
+            Dbg("- unknown command");
             thisReq->io_Flags &= ~IOF_QUICK;
             thisReq->io_Error = CDERR_NOCMD;
             ReplyMsg(&thisReq->io_Message);
-            Dbg("unhandled command");
             break;
     }
 }

@@ -10,7 +10,7 @@
 #define DEVICE_DATE "(1 Jan 2026)"
 #if DEBUG
 //Bump the build version for a debug release so it can be loadmoduled over a ROM version
-#define DEVICE_ID_STRING "newcdtv dev build" XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " " DEVICE_DATE
+#define DEVICE_ID_STRING "newcdtv dev " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " build " __DATE__ " " __TIME__
 #define DEVICE_VERSION 99
 #define DEVICE_REVISION 0
 #else

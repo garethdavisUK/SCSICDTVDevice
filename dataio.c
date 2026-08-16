@@ -224,8 +224,6 @@ int driveGetQSubChannel(struct devBase * db,BOOL msfmode){
 	db->nbscsiCmd.scsi_Command=(UBYTE *)SD_ReadSubChannel;		// command to issue             
 	db->nbscsiCmd.scsi_CmdLength = sizeof(SD_ReadSubChannel);	// length of the command        
 
-//	Dbg("fetching qsub");
-
 	error=DoIO( (struct IORequest *) db->nbscsiReq );
 
 	if (error){
@@ -234,76 +232,76 @@ int driveGetQSubChannel(struct devBase * db,BOOL msfmode){
 		return(error);
 	}
 
-//	Dbgf(((CONST_STRPTR) "- have %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x\r\n", nbbuffer[0],nbbuffer[1],nbbuffer[2],nbbuffer[3],nbbuffer[4],nbbuffer[5],nbbuffer[6],nbbuffer[7],nbbuffer[8],nbbuffer[9],nbbuffer[10],nbbuffer[11],nbbuffer[12],nbbuffer[13],nbbuffer[14],nbbuffer[15]));
-//	Dbg("done");
 	return (0);
 }
 
-void cdtvRead(struct devBase * db,struct IOStdReq *readReq, BOOL allowAbort){
+ULONG driveRead(struct devBase * db, ULONG discaddress, ULONG lengthinbytes, APTR iostdbufptr, BOOL allowAbort){
 	ULONG startblock, totalbytesread, bytesread, tocopy, remainbytes;
 	USHORT blockstofetch, blocksfetched; // limitation of drive
-	APTR *iostdbufptr;
 
 	struct ExecBase *SysBase = db->SysBase; // Restore Exec
     
-    ULONG lengthinbytes = readReq->io_Length;
-	ULONG discaddress = readReq->io_Offset;
     ULONG lengthinblocks = lengthinbytes/db->discblocksize;
 	startblock = discaddress/db->discblocksize;
 	
     totalbytesread=0;
 	tocopy=0;
 
-	Dbgf(((CONST_STRPTR) "[cdtv] read address=0x%lx len=0x%lx\n",discaddress,lengthinbytes));
+	Dbgf(((CONST_STRPTR) "[cdtv] read start=0x%lx len=0x%lx\n",discaddress,lengthinbytes));
+	//Dbgf(((CONST_STRPTR) "[cdtv] read buf=0x%lx\n",iostdbufptr));
 
 	if (lengthinbytes == 0){
 		Dbg("zero read requested");
-		readReq->io_Error=CDERR_NOTVALID;
-		readReq->io_Actual=0;
-		return;
+		return 0;
 	}
 
 	if (lengthinblocks>0xFFFF){
 		// Drive has maximum request size of 0xFFFF blocks (which = 32MB so shouldn't be a problem)
 		Dbg(">32MB read request");
-		readReq->io_Error=CDERR_NOTVALID;
-		readReq->io_Actual=0;
-		return;
+		return 0;
 	}
-
-	iostdbufptr=readReq->io_Data;
 		
  	remainbytes=discaddress%db->discblocksize;
+
+	//Dbgf(((CONST_STRPTR) "remain=0x%lx\n",remainbytes));
+
 
 	if (remainbytes !=0){
 		//Starting part way through a block - load it into local buffer and copy that part first
 		startblock = discaddress/db->discblocksize;		
 
-		blocksfetched = cdtvReadBlocks(db, startblock, 1, db->sectorbuffer);
+//		Dbgf(((CONST_STRPTR) "[cdtv] read 1 block 0x%lx offset 0x%lx\n", startblock, remainbytes));
 
-        if (blocksfetched!=1){
-			// SCSI command execution error
-			Dbg("[cdtv] read 1 failed to fetch block");
-			Dbgf(((CONST_STRPTR) "[cdtv] actual 0x%lx status 0x%lx\n", db->scsiCmd.scsi_Actual, (ULONG)db->scsiCmd.scsi_Status));
-			readReq->io_Error = CDERR_ABORTED;
-			return;
-		} 
-		
-        if (db->abortPending && allowAbort){
-			// AbortIO signal received
-			Dbg("Read start aborted");
-			readReq->io_Error = CDERR_ABORTED;
-			return;
-		} 
+		if (db->lastblock != startblock){
+			// Need to read the block into the sector buffer first
+			blocksfetched = driveReadBlocks(db, startblock, 1, db->sectorbuffer);
+
+			if (blocksfetched!=1){
+				// SCSI command execution error
+				Dbg("read 1 failed to fetch block");
+				Dbgf(((CONST_STRPTR) "[cdtv] actual 0x%lx status 0x%lx\n", db->scsiCmd.scsi_Actual, (ULONG)db->scsiCmd.scsi_Status));
+				return 0;
+			} 
+			
+			// Read successful, update buffer content
+			db->lastblock = startblock;
+
+		} else {
+			// Dbg("using sector buffer");
+		}
 
         //Calculate how many bytes to copy to ioreq buffer from sector buffer
-		tocopy=db->discblocksize-remainbytes;
+		tocopy=(ULONG)db->discblocksize-remainbytes;
+
+		//Don't copy more than requested
 		if (tocopy>lengthinbytes) tocopy=lengthinbytes;
 
 		CopyMem(db->sectorbuffer+remainbytes,iostdbufptr,tocopy);
 
 		totalbytesread=tocopy;
-		iostdbufptr=(APTR)((ULONG)iostdbufptr+tocopy);
+		iostdbufptr=(APTR)((ULONG)iostdbufptr+tocopy); // becuase arithmetic directly on APTR doesn't work
+		Dbgf(((CONST_STRPTR) "[cdtv] read 0x%lx bytes, new buf=0x%lx\n", tocopy, iostdbufptr));
+		if (db->abortPending && allowAbort) return totalbytesread; // AbortIO signal received, stop here
 
 		// There's a bug in the CDTV DMAC that means it sometimes doesn't complete a read from CD,
 		// the developer docs advise to add READ_PAD_BYTES on to every request as a workaround. 
@@ -311,12 +309,9 @@ void cdtvRead(struct devBase * db,struct IOStdReq *readReq, BOOL allowAbort){
 		// as those last bytes are expected to be undefined.
 
 		// Consider complete if READ_PAD_BYTES or fewer left.
-		if ((lengthinbytes-totalbytesread)<=READ_PAD_BYTES){
-			readReq->io_Actual=lengthinbytes;
-			readReq->io_Error=0; //success
-			return;
-		}
+		if ((lengthinbytes-totalbytesread)<=READ_PAD_BYTES) return totalbytesread;
 
+		//Dbgf(((CONST_STRPTR) "[cdtv] read 1 0x%lx bytes\n", tocopy));
 	}
 
 	//Calculate number of complete blocks left to fetch
@@ -325,72 +320,66 @@ void cdtvRead(struct devBase * db,struct IOStdReq *readReq, BOOL allowAbort){
 	if (blockstofetch){
 		// There are complete blocks to fetch
 		startblock = (discaddress + totalbytesread)/db->discblocksize;
-		blocksfetched = cdtvReadBlocks(db, startblock, blockstofetch, iostdbufptr);
+		blocksfetched = driveReadBlocks(db, startblock, blockstofetch, iostdbufptr);
 
 		if (blocksfetched!=blockstofetch){
 			// SCSI command execution error
 			Dbgf(((CONST_STRPTR) "[cdtv] read 2 failed to fetch all blocks - fetched %d expected %d\n",blocksfetched, blockstofetch));
 			Dbgf(((CONST_STRPTR) "[cdtv] actual 0x%lx status 0x%lx\n", db->scsiCmd.scsi_Actual, (ULONG)db->scsiCmd.scsi_Status));
-			readReq->io_Error = CDERR_ABORTED;
-			return;
+			return 0;
 		}
-
-        if (db->abortPending && allowAbort){
-			// AbortIO signal received
-			Dbg("Read blocks aborted");
-			readReq->io_Error = CDERR_ABORTED;
-			return;
-		} 
 
 		bytesread=blocksfetched*db->discblocksize;
 
 		totalbytesread+=bytesread;
-		iostdbufptr=(APTR)((ULONG)iostdbufptr+bytesread);
+		iostdbufptr=(APTR)((ULONG)iostdbufptr+bytesread); // becuase arithmetic directly on APTR doesn't work
 
+		//Dbgf(((CONST_STRPTR) "[cdtv] read 0x%lx bytes, new buf=0x%lx, totalread=0x%lx\n", bytesread, iostdbufptr,totalbytesread));
+
+        if (db->abortPending && allowAbort) return totalbytesread; // AbortIO signal received, stop here
+
+		//Dbgf(((CONST_STRPTR) "[cdtv] read 2 blocks 0x%lx bytes 0x%lx total 0x%lx\n", blocksfetched, bytesread, totalbytesread));
 	
 		// As before, consider complete if READ_PAD_BYTES or fewer left.
-			if((lengthinbytes-totalbytesread)<=READ_PAD_BYTES){
-			readReq->io_Actual=lengthinbytes;
-			readReq->io_Error=0; //success
-			return;
-		}
+		if((lengthinbytes-totalbytesread)<=READ_PAD_BYTES) return totalbytesread;
 
     } // end if blockstofetch
 
 	// If still here there's less than a block of bytes left to transfer
 	startblock = (discaddress + totalbytesread)/db->discblocksize;
 	
-	Dbgf(((CONST_STRPTR) "[cdtv] partial read end from block 0x%lx bytes 0x%lx\n",startblock, (lengthinbytes-totalbytesread)));
+//	Dbgf(((CONST_STRPTR) "[cdtv] read 3 from block 0x%lx length 0x%lx\n",startblock, (lengthinbytes-totalbytesread)));
     
-	blocksfetched = cdtvReadBlocks(db, startblock, 1, db->sectorbuffer);
-	
-	if (blocksfetched!=1){
-		// SCSI command execution error
-		Dbg("[cdtv] read 3 failed to fetch block");
-		Dbgf(((CONST_STRPTR) "[cdtv] actual 0x%lx status 0x%lx\n", db->scsiCmd.scsi_Actual, (ULONG)db->scsiCmd.scsi_Status));
-
-		readReq->io_Error = CDERR_ABORTED;
-		return;
-	} 
-	
-	if (db->abortPending && allowAbort){
-		// AbortIO signal received
-		Dbg("Read end aborted");
-		readReq->io_Error = CDERR_ABORTED;
-		return;
-	} 
-
+	if (db->lastblock != startblock){
+		// Need to read the block into the sector buffer first
+		blocksfetched = driveReadBlocks(db, startblock, 1, db->sectorbuffer);
+		
+		if (blocksfetched!=1){
+			// SCSI command execution error
+			Dbg("[cdtv] read 3 failed to fetch block");
+			Dbgf(((CONST_STRPTR) "[cdtv] actual 0x%lx status 0x%lx\n", db->scsiCmd.scsi_Actual, (ULONG)db->scsiCmd.scsi_Status));
+			return 0;
+		} 
+		
+		// Read successful, update buffer content
+		db->lastblock = startblock;
+	} else {
+//		Dbg("using sector buffer");
+	}
 	// copy data from sector buffer to ioreq buffer
 	tocopy=lengthinbytes-totalbytesread;
 	CopyMem(db->sectorbuffer,iostdbufptr,tocopy);
 
+	//Not much point testing for AbortIO as here we are already finished.
+
 	totalbytesread+=tocopy;
-	readReq->io_Actual=totalbytesread;
-	readReq->io_Error=0; //success
+	return totalbytesread; //success
+
+//	Dbg("complete 3");
 	
 }
 
-USHORT cdtvReadBlocks(struct devBase * db, ULONG startblock, USHORT blockstofetch, APTR readbufptr){
+USHORT driveReadBlocks(struct devBase * db, ULONG startblock, USHORT blockstofetch, APTR readbufptr){
 	UBYTE SD_ReadCmd[]	= { 0x28,0,0,0,0,0,0,0,0,0};	
 	int error;
 	ULONG bytes = blockstofetch * db->discblocksize;
@@ -442,83 +431,114 @@ void cdtvReadXL(struct devBase * db,struct IOStdReq *readReq){
 
 	struct ExecBase *SysBase = db->SysBase; // Restore Exec
 
-	struct IOStdReq readDataReq; // IOStdReq structure to use for the individual reads of each node in the list
 	struct Interrupt completeInt;
 
 	register APTR *regA2 asm ("a2");
 	(void)regA2; // Suppress unused variable warning
 	
-	ULONG startaddress, bytesread, byteslength;
+	ULONG startaddress, bytesread, byteslength, thisread, thislength;
 	startaddress = readReq->io_Offset*db->discblocksize;
-	bytesread=0;
+
+	// Note length of -1 indicates read forever, but that would give 0xFFFFFFFF here which effectively works the same
 	byteslength=readReq->io_Length*db->discblocksize;
-	//byteslength=readReq->io_Length;
+
+	bytesread=0; //Total bytes read
 
 	// List of CDXL read requests - each node contains a CDXLread structure with the details of the read to perform and where to put the data. 
-	struct MinList *CDXLlist = (struct MinList *)readReq->io_Data; 
-	struct CDXL *currentNode;
+	//struct MinList *CDXLlist = (struct MinList *)readReq->io_Data; 
+	struct CDXL *currentNode = (struct CDXL *)readReq->io_Data; // Set the first node in the list
 
-	Dbgf(((CONST_STRPTR) "[cdtv] readxl start 0x%lx blocks 0x%lx bytes 0x%lx\n",readReq->io_Offset, readReq->io_Length, byteslength));
+	Dbgf(((CONST_STRPTR) "[cdtv] readxl start 0x%lx blocks 0x%lx bytes 0x%lx list 0x%lx\n",readReq->io_Offset, readReq->io_Length, byteslength, readReq->io_Data));
 
-	//Read through the list items
-	for ( currentNode = (struct CDXL *)CDXLlist->mlh_Head ; currentNode->Node.mln_Succ != NULL ; currentNode = (struct CDXL *)currentNode->Node.mln_Succ ) {
+	//Set drive to single speed so the data does not arrive too fast
+	setDriveSingleSpeed(db,TRUE);
 
-		Dbgf(((CONST_STRPTR) "[cdtv] readxl node ptr 0x%lx succ 0x%lx buf 0x%lx len 0x%lx total 0x%lx\n",currentNode, currentNode->Node.mln_Succ, currentNode->Buffer, currentNode->Length, bytesread));
+	#if DEBUG
+	// Do a test parse and display of list items
+	Dbg("Following CDXL list\n");
+	int i=0;
+    while (currentNode->Node.mln_Succ !=NULL) {
+        
+        Dbgf(((CONST_STRPTR) "Node %lx 0x%lx Next: 0x%lx\n, Buf: 0x%lx, Len: 0x%lx, CB: 0x%lx ", (ULONG)i, currentNode, currentNode->Node.mln_Succ , currentNode->Buffer, currentNode->Length, currentNode->DoneFunc));
+        
+        /* Move to the next node */
+         currentNode = (struct CDXL *)currentNode->Node.mln_Succ;
+        i++;
 
-		if (currentNode->Buffer==NULL && currentNode->Length!=0){
-			// Invalid node - buffer is null but length is not zero
-			Dbg("ReadXL invalid node - null buffer with non-zero length");
-			readReq->io_Error = CDERR_BADARG;
-			return;
+		//List may be circular, so break after 10 nodes
+        if (i > 9) {
+			Dbg("stopping after 10 nodes\n");
+			break; 
+		}
+    }
+	#endif
+
+	// struct CDXL *currentNode = (struct CDXL *)readReq->io_Data; // Set the first node in the list
+	currentNode = (struct CDXL *)readReq->io_Data; // Set the first node in the list
+
+	//Loop through the list items
+	while ( currentNode->Node.mln_Succ !=NULL) {
+
+		Dbgf(((CONST_STRPTR) "[cdtv] readxl node ptr 0x%lx buf 0x%lx len 0x%lx  - total 0x%lx\n",currentNode, currentNode->Buffer, currentNode->Length, bytesread));
+
+		if (currentNode->Buffer!=NULL && currentNode->Length!=0){
+			// Node has a buffer and non zero length - perform the read
+			thislength = currentNode->Length;
+			if (thislength + bytesread > byteslength) thislength = byteslength - bytesread; // Don't read more than was requested
+
+			thisread= driveRead(db,(startaddress + bytesread), thislength, currentNode->Buffer, FALSE);
+			currentNode->Actual = thisread;
+			bytesread += thisread;
+
+			if (thisread == 0){
+				// ioError received
+				Dbg("ReadXL ioError");
+				readReq->io_Error = CDERR_ABORTED;
+				return;
+			} 
+
+			if (currentNode->DoneFunc != NULL){
+				// This node has a completion function - trigger it now that the read is done
+				completeInt.is_Node.ln_Type = NT_UNKNOWN;
+				completeInt.is_Code = (APTR) currentNode->DoneFunc; // Trigger the complete function
+				completeInt.is_Data = NULL; // No data to pass
+				completeInt.is_Node.ln_Pri = +32;
+				regA2 = (APTR)(currentNode); // Pass pointer to current node in A2 as argument to the complete function 
+				Cause(&completeInt);
+			}
+
+			if (bytesread >= byteslength){
+				// We've read as much as was requested - return now
+				Dbg("ReadXL done");
+				db->blocking_ioReq->io_Error = 0;
+				db->blocking_ioReq->io_Actual = bytesread;
+				return;			
+			}
+
+			if (db->abortPending){
+				// AbortIO signal received
+				Dbg("ReadXL aborted");
+				db->blocking_ioReq->io_Error = CDERR_ABORTED;
+				db->blocking_ioReq->io_Actual = bytesread;
+				return;
+			} 
+		} else {
+			
+			// This node has no buffer or zero length
+			if (currentNode->Length==0) break; //Zero length node is end of list
+
+			// Null buffer node is a seek, add it to bytes read without reading
+			Dbgf(((CONST_STRPTR) "[cdtv] readxl node 0x%lx has no buffer - skipping\n",currentNode));
+			currentNode->Actual = currentNode->Length;
+			bytesread += currentNode->Length;
 		}
 
-		readDataReq.io_Offset = startaddress + bytesread;
-		readDataReq.io_Length = currentNode->Length;	
-		readDataReq.io_Data = currentNode->Buffer;
-		readDataReq.io_Error = 0;
-		readDataReq.io_Actual = 0;
+        /* Move to the next node */
+        currentNode = (struct CDXL *)currentNode->Node.mln_Succ;
 
-		if (currentNode->Length!=0) cdtvRead(db,&readDataReq, FALSE);
+	} //End while loop processing list nodes
 
-		bytesread += readDataReq.io_Actual;
-		currentNode->Actual = readDataReq.io_Actual;
-
-		if (readDataReq.io_Error != 0){
-			// ioError received
-			Dbg("ReadXL ioError");
-			readReq->io_Error = CDERR_ABORTED;
-			return;
-		} 
-
-		if (currentNode->DoneFunc != NULL){
-			// This node has a completion function - trigger it now that the read is done
-			Dbgf(((CONST_STRPTR) "[cdtv] callback node 0x%lx\n",(APTR)(currentNode)));
-			completeInt.is_Node.ln_Type = NT_UNKNOWN;
-			completeInt.is_Code = (APTR) currentNode->DoneFunc; // Trigger the complete function
-			completeInt.is_Data = NULL; // No data to pass, just want to trigger the interrupt
-			completeInt.is_Node.ln_Pri = 0; 	
-			completeInt.is_Node.ln_Name = (char *)(STRPTR)"ReadXL";
-			regA2 = (APTR)(currentNode); // Pass pointer to current node in A2 as argument to the complete function 
-			Cause(&completeInt);
-		}
-
-		if (bytesread >= byteslength){
-			// We've read as much as was requested - return now
-			Dbg("ReadXL done");
-			db->blocking_ioReq->io_Error = 0;
-			db->blocking_ioReq->io_Actual = bytesread;
-			return;			
-		}
-
-		if (db->abortPending){
-			// AbortIO signal received
-			Dbg("ReadXL aborted");
-			db->blocking_ioReq->io_Error = CDERR_ABORTED;
-			db->blocking_ioReq->io_Actual = bytesread;
-			return;
-		} 
-
-	}
+	setDriveSingleSpeed(db,FALSE); //Reset drive speed
 
 	Dbg("ReadXL end");
 	db->blocking_ioReq->io_Error = 0;

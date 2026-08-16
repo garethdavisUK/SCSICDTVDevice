@@ -4,6 +4,7 @@
 
 #include "globals.h"
 #include "hardware.h"
+#include <cdtv/bookmark.h>
 
 BOOL openSCSIdevice(struct devBase * db) {
 	// Opens the SCSI device and initialises the SCSI and Timer structures.
@@ -12,20 +13,79 @@ BOOL openSCSIdevice(struct devBase * db) {
 	db->scsiInitDone=TRUE; //Prevent being called a second time
 
 	struct ExecBase *SysBase = db->SysBase; // Restore Exec
+
+	//For reading the bookmark device
+	struct MsgPort *BMReadPort = NULL;
+    struct IOStdReq *BMIOReq = NULL;
+
+	UBYTE bookmark[32] = "";
+
 	BOOL success=TRUE;
-	BYTE error,temp;
+	BYTE temp,error;
 
-	while(TRUE) { // Loop used to break out of on error during initialisation
+	ULONG myID = MAKEBID(BM_MFGID,BM_PRODID); //Bookmark ID
 
-		if ( OpenDevice( (CONST_STRPTR)"scsi.device", 6, (struct IORequest*) db->scsiReq, 0 ) ) {
-			if ( OpenDevice( (CONST_STRPTR)"2nd.scsi.device", 6, (struct IORequest*) db->scsiReq, 0 ) ) {
+	while(TRUE) { // Loop used to break out of error during initialisation
+		BMReadPort = alib_CreatePort(NULL, 0);
+		if (!BMReadPort)
+		{
+			Dbg("BM port create failed");
+			break;
+		}
+
+		BMIOReq = alib_CreateStdIO(BMReadPort);
+
+		if (!BMIOReq)
+		{
+			Dbg("BM IO create failed");
+			alib_DeletePort(BMReadPort);
+			break;
+		}
+
+		error = OpenDevice((CONST_STRPTR)"bookmark.device", myID, (struct IORequest*)BMIOReq, 0);
+		
+		if (error != 0)
+		{
+			Dbgf(((CONST_STRPTR)"[cdtv] Could not open bookmark.device (Error code: %ld)\n",(ULONG)error));
+			alib_DeleteStdIO(BMIOReq);
+			alib_DeletePort(BMReadPort);
+			break;
+		}
+
+		//Device has opened successfully with our bookmark ID
+		BMIOReq->io_Command = CMD_READ;
+		BMIOReq->io_Data    = (APTR)&bookmark;
+		BMIOReq->io_Length  = -1;
+		BMIOReq->io_Offset  = 0;
+
+		Dbg("Reading bookmark data...");
+		DoIO((struct IORequest*)BMIOReq); 
+
+		if (BMIOReq->io_Error) {
+			Dbgf(((CONST_STRPTR)"[cdtv] Could not read bookmark (Error code: %ld)\n",(ULONG)error));
+		}
+		
+		break; //Read complete
+	}
+
+	while(TRUE) { // Loop used to break out of error during initialisation
+
+		if (bookmark[1] !=0){
+			Dbgf(((CONST_STRPTR)"[cdtv] bookmark - device %s unit %ld\n",&bookmark[1],(ULONG)bookmark[0]));
+			if ( OpenDevice( &bookmark[1], bookmark[0], (struct IORequest*) db->scsiReq, 0 ) ) {
+				db->scsiReq->io_Device = NULL;
+				Dbg("scsi open failed");
+				success=FALSE;
+				break;
+			}
+		} else {
+			if ( OpenDevice( (CONST_STRPTR)"scsi.device", 6, (struct IORequest*) db->scsiReq, 0 ) ) {
 				db->scsiReq->io_Device = NULL;
 				Dbg("scsi open failed");
 				success=FALSE;
 				break;
 			}
 		}
-
 		//clone the SCSI structures	
 		db->nbscsiReq=db->scsiReq;
 		db->rdyscsiReq=db->scsiReq;
@@ -61,8 +121,13 @@ BOOL openSCSIdevice(struct devBase * db) {
 		isUnitReady(db); // Initial check if disc present
 		
 		Dbg("scsi open success");
+
+		// Set drive into CDDA immediate reply mode and disable stop on track crossing mode
+		driveSetImmediateMode(db,TRUE);
+
 		break; // Initialisation completed successfully
 
+		db->lastblock = 0; // Reset last block in buffer
 
 	} // end initilisation while loop
 
@@ -150,6 +215,7 @@ BOOL isUnitReady(struct devBase * db)
 
 			// Fire diskchange interrupt if set
 			if (db->changeInt) Cause (db->changeInt);
+			Dbg("Caused change interrupt");
 		}			
 		return (FALSE);
 	} 			       
@@ -336,9 +402,10 @@ void hdScsiCmd(struct devBase * db,struct IOStdReq *iostd){
 	iostd->io_Actual = db->scsiReq->io_Actual;
 }
 
-void setDriveSingleSpeed(struct devBase * db){
+void setDriveSingleSpeed(struct devBase * db, BOOL enable){
 	
-	UBYTE SD_SetSingleSpeed[]= { 0xDA,0,1,0,0,0,0,0,0,0,0,0}; 	
+	UBYTE SD_SetSingleSpeed[]= { 0xDA,0,0,0,0,0,0,0,0,0,0,0}; 	
+	if (!enable) SD_SetSingleSpeed[2] = 0xFF; // Maximum speed
 	int error;
 	
 	struct ExecBase *SysBase = db->SysBase; // Restore Exec	
@@ -353,7 +420,7 @@ void setDriveSingleSpeed(struct devBase * db){
 	if (error){
 		// SCSI command execution error - although we don't really care :)
 		DebugSCSIerror(error, &db->nbscsiCmd);
-		Dbg("set single speed failed");
+		Dbg("set speed failed");
 	}
 
 	return;
@@ -385,14 +452,14 @@ void DebugSCSIerror(BYTE error, struct SCSICmd *scsiCmd)
 			{
 				Dbg("No sense data returned");
 			} else {
-				Dbgf(((CONST_STRPTR)"Dumping 0x%x bytes of sense data: \n",scsiCmd->scsi_SenseActual));
+				Dbgf(((CONST_STRPTR)"Dumping %ld bytes of sense data: \n",(ULONG)scsiCmd->scsi_SenseActual));
 				for (int i=0; i<scsiCmd->scsi_SenseActual; i++)
-				     Dbgf(((CONST_STRPTR)"0x%x ",scsiCmd->scsi_SenseData[i]));
+				     Dbgf(((CONST_STRPTR)"0x%x ",(ULONG)scsiCmd->scsi_SenseData[i]));
 				Dbgf(((CONST_STRPTR)"\n"));
 			}
 			break;
 		default:
-			Dbgf(((CONST_STRPTR)"Unknown SCSI error: 0x%x\n",error));
+			Dbgf(((CONST_STRPTR)"Unknown SCSI error: 0x%lx\n",(ULONG)error));
 			break;			
 	}			
 }
