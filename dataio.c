@@ -167,40 +167,53 @@ void cdtvSeek(struct devBase * db,struct IOStdReq *iostd){
 }
 
 void cdtvSubQ(struct devBase * db,struct IOStdReq *iostd,BOOL msfmode){
-    //Packs disc Q subchennel data from nbbufer into a CDSubQ structure
+
+	BYTE error;
+	UBYTE SD_ReadSubChannel[]= { 0x42,0,64,0,0,0,0,0,254,0};// Presents 255 byte buffer
 
 	struct ExecBase *SysBase = db->SysBase; // Restore Exec
 
-	struct CDSubQ *cdsubqptr;
-    
-	cdsubqptr=iostd->io_Data;
-	
+	if (!db->playcdda_ioReq || !msfmode){
+		// Need to update the in memory copy first
 
-	if (driveGetQSubChannel(db,msfmode)){
-		// SCSI command execution error
-		iostd->io_Error = CDERR_ABORTED;
-		return;
+		if (msfmode) SD_ReadSubChannel[1]=2;
+		
+		driveInitSCSIstructure_nb(db); 
+		db->nbscsiCmd.scsi_Command=(UBYTE *)SD_ReadSubChannel;		// command to issue             
+		db->nbscsiCmd.scsi_CmdLength = sizeof(SD_ReadSubChannel);	// length of the command        
+
+		error=DoIO( (struct IORequest *) db->nbscsiReq );
+
+		if (error){
+			// SCSI command execution error
+			Dbg("fetch qsub read fail");
+			db->discSubQ.Status = SQSTAT_NOTVALID;
+			iostd->io_Error = CDERR_ABORTED;
+			return;
+		}
+
+		//Update common elements
+		db->discSubQ.Status = db->rdybuffer[1];
+		db->discSubQ.AddrCtrl = db->rdybuffer[5];
+		db->discSubQ.Track  = db->rdybuffer[6]; 	
+		db->discSubQ.Index = db->rdybuffer[7];
+
+		db->discSubQ.ValidUPC = 0; //Not supported on CDTV, so not checking here
+
+		if (msfmode){
+			db->discSubQ.DiskPosition.MSF.Minute = db->nbbuffer[9];
+			db->discSubQ.DiskPosition.MSF.Second = db->nbbuffer[10];
+			db->discSubQ.DiskPosition.MSF.Frame = db->nbbuffer[11];
+			db->discSubQ.TrackPosition.MSF.Minute = db->nbbuffer[13];
+			db->discSubQ.TrackPosition.MSF.Second = db->nbbuffer[14];
+			db->discSubQ.TrackPosition.MSF.Frame = db->nbbuffer[15];
+		} else {
+			db->discSubQ.DiskPosition.LSN =  db->nbbuffer[11] | (db->nbbuffer[10] << 8) | (db->nbbuffer[9] << 16) | (db->nbbuffer[8] << 24);
+			db->discSubQ.TrackPosition.LSN = db->nbbuffer[15] | (db->nbbuffer[14] << 8) | (db->nbbuffer[13] << 16) | (db->nbbuffer[12] << 24);
+		}
+
 	}
-	
-	cdsubqptr->Status = db->nbbuffer[1];
-	cdsubqptr->AddrCtrl = db->nbbuffer[5];
-	cdsubqptr->Track  = db->nbbuffer[6]; 	
-	cdsubqptr->Index = db->nbbuffer[7];
-
-	if (msfmode){
-		cdsubqptr->DiskPosition.MSF.Minute = db->nbbuffer[9];
-		cdsubqptr->DiskPosition.MSF.Second = db->nbbuffer[10];
-		cdsubqptr->DiskPosition.MSF.Frame = db->nbbuffer[11];
-		cdsubqptr->TrackPosition.MSF.Minute = db->nbbuffer[13];
-		cdsubqptr->TrackPosition.MSF.Second = db->nbbuffer[14];
-		cdsubqptr->TrackPosition.MSF.Frame = db->nbbuffer[15];
-	} else {
-		cdsubqptr->DiskPosition.LSN =  db->buffer[11] | (db->nbbuffer[10] << 8) | (db->nbbuffer[9] << 16) | (db->nbbuffer[8] << 24);
-		cdsubqptr->TrackPosition.LSN = db->buffer[15] | (db->nbbuffer[14] << 8) | (db->nbbuffer[13] << 16) | (db->nbbuffer[12] << 24);
-	}	
-
-	cdsubqptr->ValidUPC = 0; //Not supported on CDTV, so not checking here
-	
+/*	
 	if (db->nbbuffer[1]==SQSTAT_DONE){
 		// We've picked up the audio has ended before the polling loop has - deal with it now
 		Dbg("read subq successful");
@@ -208,31 +221,10 @@ void cdtvSubQ(struct devBase * db,struct IOStdReq *iostd,BOOL msfmode){
 		ReplyMsg(&db->playcdda_ioReq->io_Message);
 		db->playcdda_ioReq = NULL;	
 	}
-}
+*/
+	// Copy in memory structure to caller's structure
+	CopyMem(&db->discSubQ, iostd->io_Data, sizeof (struct CDSubQ));
 
-int driveGetQSubChannel(struct devBase * db,BOOL msfmode){
-    //Fetches the Q subchannel data from the disc into nbbuffer
-
-	BYTE error;
-	UBYTE SD_ReadSubChannel[]= { 0x42,0,64,0,0,0,0,0,254,0};// Presents 255 byte buffer
-
-	struct ExecBase *SysBase = db->SysBase; // Restore Exec
-
-	if (msfmode) SD_ReadSubChannel[1]=2;
-		
-	driveInitSCSIstructure_nb(db); 
-	db->nbscsiCmd.scsi_Command=(UBYTE *)SD_ReadSubChannel;		// command to issue             
-	db->nbscsiCmd.scsi_CmdLength = sizeof(SD_ReadSubChannel);	// length of the command        
-
-	error=DoIO( (struct IORequest *) db->nbscsiReq );
-
-	if (error){
-		// SCSI command execution error
-		Dbg("fetch qsub read fail");
-		return(error);
-	}
-
-	return (0);
 }
 
 ULONG driveRead(struct devBase * db, ULONG discaddress, ULONG lengthinbytes, APTR iostdbufptr, BOOL allowAbort){

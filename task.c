@@ -15,7 +15,6 @@ void devHandler(void)
 	struct taskMessage *tm;
 
 	BOOL terminate=FALSE, blockingPending=FALSE;
-	BYTE error;
 
 	ULONG signal, cmdSig, nbcmdSig, timerSig, taskSig;
 		
@@ -179,7 +178,8 @@ void devHandler(void)
 			//Safe to do other things now...
 
 			isUnitReady(db); //Check for diskchange
-			
+
+			if (db->playcdda_ioReq && db->abortPending) abortCurrentPlay(db); // Check for pending abortIO
 
 			if (db->playcdda_ioReq){ // Check state of CDDA playback if open ioreq
 
@@ -188,44 +188,39 @@ void devHandler(void)
 					db->abortPending = FALSE;
 				}
 
-				error=driveGetQSubChannel(db,TRUE);
-				if (!error){
-					switch (db->nbbuffer[1]){
-						case SQSTAT_PLAYING:
-							// Playing - nothing to do
-							Dbgf(((CONST_STRPTR) "[cdtv] playing track %02ld %02ld:%02ld disc %02ld:%02ld\n",(ULONG)db->nbbuffer[6],(ULONG)db->nbbuffer[13],(ULONG)db->nbbuffer[14],(ULONG)db->nbbuffer[9],(ULONG)db->nbbuffer[10]));
-							break;
+				switch (db->discSubQ.Status){
+					case SQSTAT_PLAYING:
+						// Playing - nothing to do
+						Dbgf(((CONST_STRPTR) "[cdtv] playing track %02ld %02ld:%02ld disc %02ld:%02ld\n",(ULONG)db->discSubQ.Track,(ULONG)db->discSubQ.TrackPosition.MSF.Minute,(ULONG)db->discSubQ.TrackPosition.MSF.Second,(ULONG)db->discSubQ.DiskPosition.MSF.Minute,(ULONG)db->discSubQ.DiskPosition.MSF.Second));
+						break;
 
-						case SQSTAT_PAUSED:
-							// Paused - nothing to do
-							Dbg("audio paused");
-							break;
-							
-						case SQSTAT_DONE:
-							// completed successfully
-							Dbg("audio completed successfully, sending reply");
+					case SQSTAT_PAUSED:
+						// Paused - nothing to do
+						Dbg("audio paused");
+						break;
+						
+					case SQSTAT_DONE:
+						// completed successfully
+						Dbg("audio completed successfully, sending reply");
 
-							db->playcdda_ioReq->io_Error = 0;
-							ReplyMsg(&db->playcdda_ioReq->io_Message);							
-							db->playcdda_ioReq = NULL;
-							break;
-							
-						case SQSTAT_NOTVALID:
-							// Invalid audio status  
+						db->playcdda_ioReq->io_Error = 0;
+						ReplyMsg(&db->playcdda_ioReq->io_Message);							
+						db->playcdda_ioReq = NULL;
+						break;
+						
+					case SQSTAT_NOTVALID:
+						// Invalid audio status  
 
-						case SQSTAT_ERROR:
-							// Playback stopped due to error
+					case SQSTAT_ERROR:
+						// Playback stopped due to error
 
-						case SQSTAT_NOSTAT:
-							// No audio status available (probably terminated by other request)
+					case SQSTAT_NOSTAT:
+						// No audio status available (probably terminated by other request)
 
-						default:
-							// Anything else
-							abortCurrentPlay(db);							
-							break;
-					}
-				} else {
-					Dbg("poll driveGetQSubChannel error");
+					default:
+						// Anything else
+						abortCurrentPlay(db);							
+						break;
 				}
 			} 
 			

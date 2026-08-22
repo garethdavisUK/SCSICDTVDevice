@@ -171,6 +171,7 @@ BOOL isUnitReady(struct devBase * db)
 	UBYTE SD_UnitReady[] = { 0,0,0,0,0,0 }; 
 	UBYTE SD_ReadTOC[]	= { 0x43,0,0,0,0,0,0xAA,0,255,0}; // Request TOC leadout with 255 byte buffer
 	UBYTE SD_ReadCapacity[]= { 0x25,0,0,0,0,0,0,0,0,0};
+	UBYTE SD_ReadSubChannel[]= { 0x42,2,64,0,0,0,0,0,254,0}; // MSF mode
 
 	struct ExecBase *SysBase = db->SysBase; // Restore Exec
 
@@ -280,6 +281,33 @@ BOOL isUnitReady(struct devBase * db)
 		db->discblocksize = db->rdybuffer[7] | (db->rdybuffer[6] << 8) | (db->rdybuffer[5] << 16) | (db->rdybuffer[4] << 24);
 		
 		db->framerate=75; // Probably should read this off of the drive, but it's unlikely to be different.
+	}
+
+	if (db->playcdda_ioReq) {
+		//CD is playing so update CDsubQ in memory
+		db->rdyscsiCmd.scsi_Command=(UBYTE *)SD_ReadSubChannel;		// command to issue             
+		db->rdyscsiCmd.scsi_CmdLength = sizeof(SD_ReadSubChannel);	// length of the command
+		db->rdyscsiCmd.scsi_SenseActual = 0;		
+
+		error=DoIO( (struct IORequest *) db->rdyscsiReq );			// send it to the device driver
+
+		if (error){
+            Dbg("TestUnitReady - read subQ - error");
+			db->discSubQ.Status = SQSTAT_NOTVALID;
+		} else {
+			// Update discSubQ in memory
+			db->discSubQ.Status = db->rdybuffer[1];
+			db->discSubQ.AddrCtrl = db->rdybuffer[5];
+			db->discSubQ.Track  = db->rdybuffer[6]; 	
+			db->discSubQ.Index = db->rdybuffer[7];
+			db->discSubQ.ValidUPC = 0; //Not supported on CDTV, so not checking here
+			db->discSubQ.DiskPosition.MSF.Minute = db->rdybuffer[9];
+			db->discSubQ.DiskPosition.MSF.Second = db->rdybuffer[10];
+			db->discSubQ.DiskPosition.MSF.Frame = db->rdybuffer[11];
+			db->discSubQ.TrackPosition.MSF.Minute = db->rdybuffer[13];
+			db->discSubQ.TrackPosition.MSF.Second = db->rdybuffer[14];
+			db->discSubQ.TrackPosition.MSF.Frame = db->rdybuffer[15];
+		}
 	}
 
 	if (!db->driveready) { // if previously not ready, increment counter
@@ -425,6 +453,7 @@ void setDriveSingleSpeed(struct devBase * db, BOOL enable){
 
 	return;
 }
+
 #if DEBUG
 void DebugSCSIerror(BYTE error, struct SCSICmd *scsiCmd)
 {	

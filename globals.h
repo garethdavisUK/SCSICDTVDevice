@@ -111,6 +111,7 @@ struct devBase {
     ULONG discchanges;
     struct CDTOC discSummary;
     struct RMSF discSummaryMSF;
+    struct CDSubQ discSubQ;
 
     USHORT discblocksize;
     ULONG discblocks;
@@ -152,7 +153,6 @@ void cdtvGetGeometry(struct devBase * db,struct IOStdReq *iostd);
 void cdtvGetTOC(struct devBase * db,struct IOStdReq *iostd, BOOL msfmode);
 void cdtvSeek(struct devBase * db,struct IOStdReq *iostd);
 void cdtvSubQ(struct devBase * db,struct IOStdReq *iostd, BOOL msfmode);
-int driveGetQSubChannel(struct devBase * db,BOOL msfmode);
 ULONG driveRead(struct devBase * db, ULONG discaddress, ULONG lengthinbytes, APTR iostdbufptr, BOOL allowAbort);
 USHORT driveReadBlocks(struct devBase * db, ULONG startblock, USHORT blockstofetch, APTR readbufptr);
 void cdtvReadXL(struct devBase * db,struct IOStdReq *readReq);
