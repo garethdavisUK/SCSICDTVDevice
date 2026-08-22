@@ -96,7 +96,6 @@ void cdtvPlayTrack(struct devBase * db, struct IOStdReq *iostd){
 	}
 
 	// Start cdda polling
-	db->cdda_ioreq=TRUE;
 	db->abortPending = FALSE;
 
 	// Result monitored in unit ready polling loop
@@ -162,7 +161,6 @@ BOOL drivePlay(struct devBase * db, ULONG offset, ULONG length, BOOL lsn, BOOL p
 
 	if (!poke) {
 		// If not poking an existing play start cdda polling
-		db->cdda_ioreq=TRUE;
 		db->abortPending = FALSE;
 	}
 			
@@ -269,11 +267,10 @@ int cdtvMute(struct devBase * db, struct IOStdReq *iostd,  int value, int mode){
 
 void abortCurrentPlay(struct devBase *db){
 	struct ExecBase *SysBase = db->SysBase; // Restore Exec
-	if (!db->cdda_ioreq) return;
+	if (!db->playcdda_ioReq) return;
 	
 	Dbg("audio playback abort");
 	driveStopPlayback(db);
-	db->cdda_ioreq = FALSE;
 	db->playcdda_ioReq->io_Error = CDERR_ABORTED;
 	ReplyMsg(&db->playcdda_ioReq->io_Message);
 	db->playcdda_ioReq = NULL;

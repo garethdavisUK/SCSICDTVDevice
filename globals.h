@@ -99,7 +99,6 @@ struct devBase {
 
     //cdda related
     BOOL immediate;
-    BOOL cdda_ioreq;
     struct IOStdReq *playcdda_ioReq;
 
     //Diskchange Interrupt related

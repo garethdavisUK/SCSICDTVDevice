@@ -204,9 +204,9 @@ void cdtvSubQ(struct devBase * db,struct IOStdReq *iostd,BOOL msfmode){
 	if (db->nbbuffer[1]==SQSTAT_DONE){
 		// We've picked up the audio has ended before the polling loop has - deal with it now
 		Dbg("read subq successful");
-		db->cdda_ioreq = FALSE;
 		db->playcdda_ioReq->io_Error = 0;
-		ReplyMsg(&db->playcdda_ioReq->io_Message);	
+		ReplyMsg(&db->playcdda_ioReq->io_Message);
+		db->playcdda_ioReq = NULL;	
 	}
 }
 

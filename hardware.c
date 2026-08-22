@@ -206,11 +206,11 @@ BOOL isUnitReady(struct devBase * db)
 			db->driveready=FALSE;
 			db->discchanges++;
 			
-			if (db->cdda_ioreq){
+			if (db->playcdda_ioReq){
             	Dbg("audio playback aborted by diskchange");
-				db->cdda_ioreq = FALSE;
 				db->playcdda_ioReq->io_Error = CDERR_ABORTED;
-				ReplyMsg(&db->playcdda_ioReq->io_Message);	
+				ReplyMsg(&db->playcdda_ioReq->io_Message);
+				db->playcdda_ioReq = NULL;
 			}
 
 			// Fire diskchange interrupt if set

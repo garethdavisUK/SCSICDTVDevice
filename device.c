@@ -418,7 +418,7 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
 			// Not fully implemented yet, needs done and position error flags
 			if (db->driveready) thisReq->io_Actual = QSF_READY | QSF_SPIN | QSF_DISK;
 			if (db->lasterror) thisReq->io_Actual =  thisReq->io_Actual | QSF_ERROR;
-			if (db->cdda_ioreq) thisReq->io_Actual =  thisReq->io_Actual | QSF_AUDIO;
+			if (db->playcdda_ioReq) thisReq->io_Actual =  thisReq->io_Actual | QSF_AUDIO;
 			ReplyMsg(&thisReq->io_Message);
 	        break;
 			 
@@ -426,6 +426,8 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
 		case CDTV_GETGEOMETRY: 			
 	    case CDTV_ISROM:
 		case CDTV_PAUSE:
+        case CDTV_POKEPLAYLSN:
+        case CDTV_POKEPLAYMSF:
 		case CDTV_SUBQLSN:
 		case CDTV_SUBQMSF:
             thisReq->io_Flags &= ~IOF_QUICK;
@@ -451,8 +453,6 @@ static void __attribute__((used)) beginIO(struct devBase *db asm("a6"), struct I
      	case CDTV_PLAYLSN:
 		case CDTV_PLAYMSF:
         case CDTV_PLAYTRACK:
-        case CDTV_POKEPLAYLSN:
-        case CDTV_POKEPLAYMSF:
         case CDTV_READ:
         case CDTV_READXL:
 		case CDTV_SEEK:

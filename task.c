@@ -14,7 +14,7 @@ void devHandler(void)
 	struct timerequest *timerReq; 
 	struct taskMessage *tm;
 
-	BOOL terminate=FALSE;
+	BOOL terminate=FALSE, blockingPending=FALSE;
 	BYTE error;
 
 	ULONG signal, cmdSig, nbcmdSig, timerSig, taskSig;
@@ -111,7 +111,7 @@ void devHandler(void)
 		//Set devBase defaults
 		//cdda globals
 		db->immediate = TRUE;
-		db->cdda_ioreq = FALSE;
+		db->playcdda_ioReq= NULL;
 		db->discSummary.LastTrack=0xFF; // Invalidate in memory summary	
 
 		//hardware globals
@@ -181,7 +181,7 @@ void devHandler(void)
 			isUnitReady(db); //Check for diskchange
 			
 
-			if (db->cdda_ioreq){ // Check state of CDDA playback if open ioreq
+			if (db->playcdda_ioReq){ // Check state of CDDA playback if open ioreq
 
 				if (db->abortPending) {
 					abortCurrentPlay(db);
@@ -207,7 +207,7 @@ void devHandler(void)
 
 							db->playcdda_ioReq->io_Error = 0;
 							ReplyMsg(&db->playcdda_ioReq->io_Message);							
-							db->cdda_ioreq = FALSE;
+							db->playcdda_ioReq = NULL;
 							break;
 							
 						case SQSTAT_NOTVALID:
@@ -231,7 +231,7 @@ void devHandler(void)
 			
 			//Rechedule timer (poll quicker when playing audio)
 			timerReq->tr_node.io_Command 	= TR_ADDREQUEST;
-			if (db->cdda_ioreq) timerReq->tr_time.tv_secs = 1;
+			if (db->playcdda_ioReq) timerReq->tr_time.tv_secs = 1;
 				else timerReq->tr_time.tv_secs		= DISKCHANGE_CHECK_INTERVAL;
 			timerReq->tr_time.tv_micro		= 0;
 			SendIO ((struct IORequest*)timerReq);
@@ -244,7 +244,6 @@ void devHandler(void)
 			//Process all messages in the non-blocking port
 			while (nbiostd  = (struct IOStdReq *)GetMsg(db->nbdevPort)) 
 			{
-				// First look for commands that don't require drive to be ready
 				switch(nbiostd->io_Command) 
 				{
 					case CDTV_SCSIINIT:
@@ -267,6 +266,16 @@ void devHandler(void)
 						cdtvPause(db,nbiostd, nbiostd->io_Length);
 						break;
 						
+					case CDTV_POKEPLAYMSF:
+						if (!drivePlay(db,nbiostd->io_Offset,nbiostd->io_Length,FALSE,TRUE))
+							nbiostd->io_Error = CDERR_ABORTED; // Play failed
+						break;
+
+					case CDTV_POKEPLAYLSN:
+						if (!drivePlay(db,nbiostd->io_Offset,nbiostd->io_Length,TRUE,TRUE))
+							nbiostd->io_Error = CDERR_ABORTED; // Play failed
+						break;
+
 					case HD_SCSICMD:
 						hdScsiCmd(db,nbiostd);
 						break;
@@ -284,7 +293,7 @@ void devHandler(void)
 						break;
 										
 					case CDTV_STOPPLAY:
-						if (db->cdda_ioreq){
+						if (db->playcdda_ioReq){
 							// Not valid to call this when requests still open
 							nbiostd->io_Error = CDERR_NOTVALID;
 						} else {
@@ -314,8 +323,11 @@ void devHandler(void)
 
 		} // End if no blocking command signal
 
+
 		// Finally process a blocking signal
-		if (signal & cmdSig && !db->cdda_ioreq){
+		if (signal & cmdSig) blockingPending=TRUE;
+
+		if (blockingPending && !db->playcdda_ioReq){
 			//Only process one message at a time from the blocking port 
 			//to allow higher priority signals to work between blocking commands
 
@@ -339,8 +351,6 @@ void devHandler(void)
 						break;
 
 					case CDTV_PLAYLSN:
-						if (db->cdda_ioreq) abortCurrentPlay(db); // If play in progress, abort before continuing
-
 						// Store the playing request for reply in polling loop when done
 						db->playcdda_ioReq = db->blocking_ioReq;
 
@@ -351,15 +361,7 @@ void devHandler(void)
 						} 
 						break;
 
-					case CDTV_POKEPLAYLSN:
-						if (!drivePlay(db,db->blocking_ioReq->io_Offset,db->blocking_ioReq->io_Length,TRUE,TRUE))
-							db->blocking_ioReq->io_Error = CDERR_ABORTED; // Play failed
-						ReplyMsg(&db->blocking_ioReq->io_Message); // Reply to the poke
-						break;
-
 					case CDTV_PLAYMSF:
-						if (db->cdda_ioreq) abortCurrentPlay(db); // If play in progress, abort before continuing
-
 						// Store the playing request for reply in polling loop when done
 						db->playcdda_ioReq = db->blocking_ioReq;
 
@@ -372,15 +374,7 @@ void devHandler(void)
 						}
 						break;
 
-					case CDTV_POKEPLAYMSF:
-						if (!drivePlay(db,db->blocking_ioReq->io_Offset,db->blocking_ioReq->io_Length,FALSE,TRUE))
-							db->blocking_ioReq->io_Error = CDERR_ABORTED; // Play failed
-						ReplyMsg(&db->blocking_ioReq->io_Message);  // Reply to the poke
-						break;
-
 					case CDTV_PLAYTRACK:
-						if (db->cdda_ioreq) abortCurrentPlay(db); // If play in progress, abort before continuing
-
 						// Store the playing request for reply in polling loop when done
 						db->playcdda_ioReq = db->blocking_ioReq;
 
@@ -423,7 +417,9 @@ void devHandler(void)
 
 			} // End while GetMsg
 
-		} // End if Command signal
+			blockingPending=FALSE;
+
+		} // End if blocking Command signal
 	
 	} // End main loop
 
