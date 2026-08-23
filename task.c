@@ -239,6 +239,9 @@ void devHandler(void)
 			//Process all messages in the non-blocking port
 			while (nbiostd  = (struct IOStdReq *)GetMsg(db->nbdevPort)) 
 			{
+				nbiostd->io_Error = 0; // Assume success unless we set it otherwise
+				nbiostd->io_Actual = 0; 
+
 				switch(nbiostd->io_Command) 
 				{
 					case CDTV_SCSIINIT:
@@ -331,6 +334,8 @@ void devHandler(void)
 			if (db->blocking_ioReq = (struct IOStdReq *)GetMsg(db->devPort)) 
 			{
         		db->abortPending=FALSE; //Reset the abort flag
+				db->blocking_ioReq->io_Error = 0; // Assume success unless we set it otherwise
+				db->blocking_ioReq->io_Actual = 0;
 
 				// First look for commands that don't require drive to be ready
 				switch(db->blocking_ioReq->io_Command) 
@@ -378,7 +383,7 @@ void devHandler(void)
 
 					case CDTV_READ:
 						db->blocking_ioReq->io_Actual=driveRead(db,db->blocking_ioReq->io_Offset,db->blocking_ioReq->io_Length,db->blocking_ioReq->io_Data,TRUE);
-						if (db->blocking_ioReq->io_Actual==0) db->blocking_ioReq->io_Error=CDERR_ABORTED;
+						if (db->blocking_ioReq->io_Actual<(db->blocking_ioReq->io_Length - READ_PAD_BYTES)) db->blocking_ioReq->io_Error=CDERR_ABORTED; // Not enough bytes read
 						ReplyMsg(&db->blocking_ioReq->io_Message);
 						break;
 
