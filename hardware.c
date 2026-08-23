@@ -125,9 +125,9 @@ BOOL openSCSIdevice(struct devBase * db) {
 		// Set drive into CDDA immediate reply mode and disable stop on track crossing mode
 		driveSetImmediateMode(db,TRUE);
 
-		break; // Initialisation completed successfully
-
 		db->lastblock = 0; // Reset last block in buffer
+
+		break; // Initialisation completed successfully
 
 	} // end initilisation while loop
 
