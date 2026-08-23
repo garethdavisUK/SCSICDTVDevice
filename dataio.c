@@ -213,15 +213,7 @@ void cdtvSubQ(struct devBase * db,struct IOStdReq *iostd,BOOL msfmode){
 		}
 
 	}
-/*	
-	if (db->nbbuffer[1]==SQSTAT_DONE){
-		// We've picked up the audio has ended before the polling loop has - deal with it now
-		Dbg("read subq successful");
-		db->playcdda_ioReq->io_Error = 0;
-		ReplyMsg(&db->playcdda_ioReq->io_Message);
-		db->playcdda_ioReq = NULL;	
-	}
-*/
+
 	// Copy in memory structure to caller's structure
 	CopyMem(&db->discSubQ, iostd->io_Data, sizeof (struct CDSubQ));
 
@@ -234,8 +226,7 @@ ULONG driveRead(struct devBase * db, ULONG discaddress, ULONG lengthinbytes, APT
 	struct ExecBase *SysBase = db->SysBase; // Restore Exec
     
     ULONG lengthinblocks = lengthinbytes/db->discblocksize;
-	startblock = discaddress/db->discblocksize;
-	
+
     totalbytesread=0;
 	tocopy=0;
 
@@ -252,15 +243,14 @@ ULONG driveRead(struct devBase * db, ULONG discaddress, ULONG lengthinbytes, APT
 		Dbg(">32MB read request");
 		return 0;
 	}
-		
+	
+	startblock = discaddress/db->discblocksize;
  	remainbytes=discaddress%db->discblocksize;
 
 	//Dbgf(((CONST_STRPTR) "remain=0x%lx\n",remainbytes));
 
-
 	if (remainbytes !=0){
-		//Starting part way through a block - load it into local buffer and copy that part first
-		startblock = discaddress/db->discblocksize;		
+		//Starting part way through a block - load it into local buffer and copy that part first	
 
 //		Dbgf(((CONST_STRPTR) "[cdtv] read 1 block 0x%lx offset 0x%lx\n", startblock, remainbytes));
 
@@ -291,7 +281,7 @@ ULONG driveRead(struct devBase * db, ULONG discaddress, ULONG lengthinbytes, APT
 		CopyMem(db->sectorbuffer+remainbytes,iostdbufptr,tocopy);
 
 		totalbytesread=tocopy;
-		iostdbufptr=(APTR)((ULONG)iostdbufptr+tocopy); // becuase arithmetic directly on APTR doesn't work
+		iostdbufptr=(APTR)((ULONG)iostdbufptr+tocopy); // because arithmetic directly on APTR doesn't work
 		Dbgf(((CONST_STRPTR) "[cdtv] read 0x%lx bytes, new buf=0x%lx\n", tocopy, iostdbufptr));
 		if (db->abortPending && allowAbort) return totalbytesread; // AbortIO signal received, stop here
 
@@ -386,7 +376,7 @@ USHORT driveReadBlocks(struct devBase * db, ULONG startblock, USHORT blockstofet
 	SD_ReadCmd[7] = (blockstofetch & 0xff00) >> 8;
 	SD_ReadCmd[8] = (blockstofetch & 0x00ff);	
 
-	//Dbgf(((CONST_STRPTR) "[cdtv] read 0x%lx blocks (0x%lx bytes)\n",blockstofetch, bytes));
+	//Dbgf(((CONST_STRPTR) "[cdtv] read 0x%lx blocks from 0x%lx\n",blockstofetch, startblock));
 
 	db->scsiReq->io_Length  = sizeof(struct SCSICmd);
 	db->scsiReq->io_Data    = (APTR)&db->scsiCmd;
