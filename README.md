@@ -2,12 +2,12 @@
 ## What is it? 
 This is a ground up rewrite of the cdtv.device driver present in the extended ROMs of the Commodore CDTV and A570 drives. 
 
-This translates the device calls into SCSI 2 compatible CD-ROM commands and sends them to ID 6 on the scsi.device. This allows a third party SCSI CD-ROM drive to be used in place of the internal drive, which are unobtainium once they fail. You will need a CDTV SCSI interface board to connect the drive to, but there are reproductions of these available.
+This translates the device calls into SCSI 2 compatible CD-ROM commands and sends them to the scsi.device. This allows a third party SCSI CD-ROM drive to be used in place of the internal drive, which are unobtainium once they fail. You will need a CDTV SCSI interface board to connect the drive to, but there are reproductions of these available. 
 
 ## Status of the project
-This is best described as a bunch of loosly held together hacks that can successfully boot fairly simple discs like the CDPD collections. A number of more complex titles don't get any further than booting to a black screen.
+This is best described as a bunch of loosely held together hacks that can successfully run titles that don't use any CDTV specific functionality like CD audio tracks or CDXL, which seems to be the majority of CDTV titles I'm finding during testing. About 75% of the CD audio control commands are there, which is enough for titles that do simple track playback like Sim City to work correctly, but titles that get a bit more involved in partial track playback can fail in mysterious ways. It's also not been tested on an A570/A500 combo yet.
 
-This is nowhere near production quality code yet, this repo is here primarily for storage rather than sharing my work. There are no releases as yet. For this reason I'd advise people not to go building and burning this into ROMs right now, and is why I'm not including a binary module.
+This is nowhere near production quality code yet, this repo is here primarily for storage rather than sharing my work. For this reason I'd advise people not to go building and burning this into ROMs just yet, and is why I'm not including a binary module.
 
 ### What does work (maybe)
 From a driver level here is what I think is currently working, what this translates to in application support is left as an exercise for the reader
@@ -22,7 +22,7 @@ I've also implemented HD_SCSICMD which allows a SCSI direct command to be sent t
 * CDTV_FADE is not implemented, so audio transitions sound off.
 * CDTV_READXL command
 * Any commands that depend on the frame interrupt like CDTV_FRAMECALL
-* Any of the CD audio commands that pass a tracklist (the PLAY commands with 'SEG' in the name) 
+* Any of the CD audio commands that use a segment list (the PLAY commands with 'SEG' in the name) 
 * Hardware commands like CDTV_FRONTPANEL and CDTV_GENLOCK
 * Front panel buttons, and VFD display of track information during CDDA playback
 * Other undocumented commands like CDTV_OPTIONS and CDTV_DIRECT
@@ -31,11 +31,13 @@ I've also implemented HD_SCSICMD which allows a SCSI direct command to be sent t
 Also see the notes about SCSI timeouts below.
 
 ## Supported hardware
-The driver attempts to open scsi.device unit 6 and then 2nd.scsi.device unit 6. While this has been coded against the SCSI module that fits in the expansion slot on the CDTV, any other device that provides a SCSI direct interface compatible with the CDTV/A590/A2091 device should work.
+The driver defaults to using the drive at scsi.device unit 6, this may be a CD or DVD drive as long as it responds to inquiry as an optical drive. While this has been coded against the SCSI module that fits in the expansion slot on the CDTV, any other device that provides a SCSI interface compatible with the CDTV/A590/A2091 device should work. A bookmark can be set with an alternate device name and unit number if required and you don't fancy modifying the source code, see the examples in the scsiconfig folder. In theory an IDE interface that talks ATAPI via the SCSI direct interface should work, but that's currently untested.
 
-I've used Pioneer SCSI 2 CD-ROM drives for testing, but any other vendor should work as long as they follow the SCSI 2 command set. My reason for choosing the Pioneer is that it's a slot loader, and so should be possible to mount in place of the factory CD drive without needing to modify the front panel should I ever reach that stage.
+I've used Pioneer SCSI 2 CD-ROM and DVD-ROM drives for testing, but any other vendor should work as long as they follow the SCSI 2 command set. 
 
-You'll also need to find a way of combining the audio output from the drive with the CDTV Paula sound if playing titles with CDDA audio. Although the CDTV schematics say CN26 is a CD audio interface, this is for audio control only.   
+If the device driver fails to open the default or configured SCSI device it will continue to handle IO requests, but will respond with a disc not present error. This is a fail safe to allow the CDTV environment to keep functioning, and not go into a reboot loop when it can't open cdtv.device.    
+
+You'll also need to find a way of combining the audio output from the drive with the CDTV Paula sound if playing titles with CD audio. Although the CDTV schematics say CN26 is a CD audio interface, this is for audio control only.   
 
 ## Building and testing
 This has been developed using [Bebbo's gcc toolchain](https://franke.ms/git/bebbo/amiga-gcc), and the VSCode IDE.
@@ -56,7 +58,7 @@ The debug build sends a fair amount of debug output to the serial port, and is o
 ### Testing
 The driver can be softloaded on a V37 kickstart CDTV using the LoadModule11.lha package from Aminet, and the driver is also V34 compatible. Most 1.3 ROMs contain a bug that causes ExecBase to get scrubbed on reboot when more than 512K Chip RAM is present, which prevents LoadModule surviving a reboot. The workaround for 1.3 is to run SetPatch with the R option in the startup-sequence before running LoadModule. Even then it will only survive a single reboot, unless the next drive to boot also does a SetPatch R.
 
-I also use Capitoline in my testing workflow to substitute the release cdtv.device into the CDTVLand 2.35 extended rom, then flash the rom into a CDTV developer EEPROM board. It then successfully boots titles with KS1.3 or 2.04 enabled on the CDTV, subject to the issues mentioned above.    
+I also use Capitoline in my testing workflow to substitute the release cdtv.device into the CDTVLand 2.35 extended ROM, then flash the ROM into a CDTV developer EEPROM board. It then successfully boots titles with KS1.3 or 2.04 enabled on the CDTV, subject to the issues mentioned above.    
 
 There are known differences in behaviour between using LoadModule and running direct from a custom ROM, for example Sim City hangs after terraforming from LoadModule, but doesn't when the device is in ROM. Maybe changes are due to the additional RAM consumed?
 
@@ -66,7 +68,7 @@ The SCSI adaptor for the CDTV has some pretty generous timeouts to allow devices
 I expect the A590 Handler module will need patching to sort this, but that's currently out of scope here. 
 
 ## Acknowledgments
-This is based on the Jorgen Bilander's [SimpleDevice](https://github.com/jbilander/SimpleDevice), with inspiration taken from Matt Harlum's [lide.device](https://github.com/LIV2/lide.device) and Olaf Barthel's [trackfile-device](https://github.com/obarthel/trackfile-device) as I was navigating through the vaguaries of creating a module that will RTF_COLDSTART successfully. 
+This is based on the Jorgen Bilander's [SimpleDevice](https://github.com/jbilander/SimpleDevice), with inspiration taken from Matt Harlum's [lide.device](https://github.com/LIV2/lide.device) and Olaf Barthel's [trackfile-device](https://github.com/obarthel/trackfile-device) as I was navigating through the vagaries of creating a module that will RTF_COLDSTART successfully. 
 
 Thanks also go to those on the CDTVLand Discord who've provided assistance so far.
 
